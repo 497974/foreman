@@ -239,11 +239,29 @@ class Executor:
 
             # Echo the assistant turn (with its tool_calls) back into history
             # before appending results, exactly as the OpenAI protocol requires.
+            # Normalize to plain dicts rather than echoing SDK objects, and
+            # patch empty arguments to "{}": some Qwen variants emit "" for
+            # zero-arg tool calls (list_dir), and DashScope then rejects the
+            # echoed history with 400 "function.arguments must be JSON".
             messages.append(
                 {
                     "role": "assistant",
                     "content": message.content,
-                    "tool_calls": tool_calls,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.function.name,
+                                "arguments": (
+                                    call.function.arguments
+                                    if (call.function.arguments or "").strip()
+                                    else "{}"
+                                ),
+                            },
+                        }
+                        for call in tool_calls
+                    ],
                 }
             )
 
