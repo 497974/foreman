@@ -105,13 +105,27 @@ executor gets exactly one evidence-based appeal per task per run:
 3. Overturn → the task passes. Uphold → the arbiter's clarification is folded
    into the rejection reason so it reaches the executor's next attempt.
 
-**Real incident caught by this loop:** during evaluation, a machine-generated
-acceptance test in one condition was itself defective (asserted the wrong
-thing). Foreman's gate-first ordering meant the objective test result stood —
-the system neither rubber-stamped bad work nor retried forever chasing a
-broken test; a legitimate rejection was healed on the next attempt once the
-real gap was visible in `last_error` (see Condition C, T04, evaluation
-below).
+**Three real incidents from live runs** (all traceable in the ledgers/events
+committed with our development history):
+
+1. *Defective machine-generated gate.* In the very first live run the planner
+   emitted a syntactically invalid verification command — an exam no executor
+   could ever pass. The system neither rubber-stamped the (actually correct)
+   work nor looped forever: it burned its 3-attempt budget and blocked. That
+   incident produced two permanent fixes — invalid-gate detection in the
+   verifier, and a validation gate on the planner's own output ("everyone
+   gets verified, including the examiner").
+2. *Executor's test asserted the wrong thing.* In a later run the executor
+   wrote a test expecting `'Amount is required'` where the app's validation
+   order actually returns `'No JSON data provided'` first. The gate ran the
+   test for real, failed it, and the feedback named the exact assertion; the
+   next attempt fixed it. A single agent grading itself would have shipped
+   that test.
+3. *Test-isolation bug caught by the gate.* In the evaluation run (Condition
+   C, T04) the gate failed because stale rows from earlier test runs leaked
+   into `/expenses` (12–16 rows where 2 were expected). The verifier's
+   feedback prescribed the standard fix (fresh in-memory DB per test); the
+   next attempt healed it.
 
 **Execution conflicts:** the dispatcher's compare-and-swap claim means two
 workers can never hold the same task; a TTL lease means a crashed worker's
