@@ -59,6 +59,16 @@ class MockVerifier:
                 ]
             )
             self.coverage_rate = 1.0 if passed else 0.0
+            self.items = []
+            # This mock rejection is standing in for the retry-ladder demo,
+            # not a criteria-scoring judgement call — mark the gate red so
+            # the orchestrator's dispute eligibility check (contract §6,
+            # "gate failures are not disputable") correctly skips the
+            # negotiation layer here without needing a real LLM client.
+            self.objective_gate = {
+                "command": "mock", "exit_code": 0 if passed else 1,
+                "passed": passed, "output_tail": "",
+            }
 
     def verify(self, task: Task, handoff: Handoff):
         if task.attempt_count < 2:
@@ -66,12 +76,82 @@ class MockVerifier:
         return self._Report(True, "mock: all acceptance criteria satisfied")
 
 
+def _build_resume_orchestrator(run_id: str, run_root: str) -> Orchestrator:
+    """Reopen an existing run's ledger.db + workspace for --resume.
+
+    Mirrors the fake-mode construction below (Orchestrator.__new__ + manual
+    attribute wiring) because Orchestrator.__init__ always mints a *new*
+    run_id/run_dir — resume must instead point at the run_id the caller named
+    on the command line. No planner call happens here (contract §7: no
+    re-planning): the plan already lives in the reopened ledger's tasks table.
+    """
+    from pathlib import Path
+
+    from foreman.config import Settings
+    from foreman.dispatcher import Dispatcher
+    from foreman.ledger import Ledger
+    from foreman.workspace import Workspace
+
+    settings = Settings.from_env()
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.settings = settings
+    from foreman.config import make_client
+    orch.client = make_client(settings)
+
+    orch.run_root = Path(run_root)
+    orch.run_id = run_id
+    run_dir = orch.run_root / run_id
+    if not run_dir.is_dir():
+        raise SystemExit(f"no such run directory: {run_dir}")
+    orch.run_dir = run_dir
+
+    orch.ledger = Ledger(db_path=str(run_dir / "ledger.db"))
+    orch.workspace = Workspace(run_dir / "workspace")
+    orch.dispatcher = Dispatcher(orch.ledger)
+
+    from foreman.arbiter import Arbiter
+    from foreman.executor import Executor
+    from foreman.planner import Planner
+    from foreman.verifier import Verifier
+
+    orch.planner = Planner(orch.client, settings.planner_model)
+    orch.executor = Executor(orch.client, settings.executor_model, orch.workspace)
+    orch.verifier = Verifier(orch.client, settings.verifier_model, orch.workspace)
+    orch.arbiter = Arbiter(orch.client, settings.planner_model, orch.workspace)
+    orch.events_path = run_dir / "events.jsonl"
+    orch.disputed_task_ids = set()
+    return orch
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Foreman: autonomous task-execution orchestrator")
-    parser.add_argument("--checklist", required=True, help="path to a requirements checklist (markdown)")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--checklist", help="path to a requirements checklist (markdown)")
+    group.add_argument("--resume", metavar="RUN_ID", help="resume an existing run by id (no re-planning)")
     parser.add_argument("--mock", action="store_true", help="use scripted fake executor/verifier, no API key needed")
     parser.add_argument("--run-root", default="runs", help="directory under which run artifacts are stored")
     args = parser.parse_args()
+
+    if args.resume:
+        if args.mock:
+            raise SystemExit("--resume does not support --mock (there is no fake ledger to reopen)")
+        orch = _build_resume_orchestrator(args.resume, args.run_root)
+        print(f"Foreman run resuming — run_id={orch.run_id}")
+        print("  legend: [#]done [>]running [?]review [X]blocked [ ]ready [.]pending\n")
+
+        summary = orch.resume_run(args.resume)
+
+        print("\n--- final summary ---")
+        print(f"run_id: {summary['run_id']}")
+        print(f"run_dir: {summary['run_dir']}")
+        print(f"done: {summary['done']}/{summary['total_tasks']}   blocked: {summary['blocked']}")
+        print(f"claims used: {summary['claims']}   elapsed: {summary['elapsed_s']:.1f}s")
+        print("attempts per task:")
+        for tid, n in summary["attempts_per_task"].items():
+            print(f"  {tid}: {n}")
+        print(f"complete: {summary['complete']}")
+        return 0
 
     requirements = open(args.checklist, encoding="utf-8").read()
 
@@ -108,6 +188,13 @@ def main() -> int:
         orch.planner = None  # plan() is monkeypatched onto the instance below
         orch.executor = MockExecutor()
         orch.verifier = MockVerifier()
+        # MockVerifier's rejections always report a red gate (see _Report),
+        # so _dispute_eligible always short-circuits before touching the
+        # arbiter — this Arbiter's client is never actually called, but the
+        # attribute must exist since the orchestrator reads it unconditionally.
+        from foreman.arbiter import Arbiter
+        orch.arbiter = Arbiter(None, settings.planner_model, orch.workspace)
+        orch.disputed_task_ids = set()
         orch.events_path = run_dir / "events.jsonl"
 
         # Mock mode still needs *some* planner: rather than reaching the

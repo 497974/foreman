@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from .arbiter import Arbiter, solicit_dispute
 from .config import Settings, make_client
 from .dispatcher import Dispatcher
 from .executor import Executor
@@ -118,8 +119,17 @@ class Orchestrator:
         self.planner = Planner(self.client, settings.planner_model)
         self.executor = Executor(self.client, settings.executor_model, self.workspace)
         self.verifier = Verifier(self.client, settings.verifier_model, self.workspace)
+        # Arbiter uses the planner-tier model (qwen-max) on purpose: it is
+        # meant to out-rank both the executor that disputes and the verifier
+        # being disputed against (contract §6).
+        self.arbiter = Arbiter(self.client, settings.planner_model, self.workspace)
 
         self.events_path = run_dir / "events.jsonl"
+
+        # One dispute per task per run (contract §6). Keyed by task_id, not
+        # attempt number, so a task cannot re-litigate a later rejection
+        # either — the appeal is a single use, not one per attempt.
+        self.disputed_task_ids: set[str] = set()
 
     # ---- events ---------------------------------------------------------
 
@@ -146,13 +156,76 @@ class Orchestrator:
                 handoffs.append(h)
         return handoffs
 
+    # ---- dispute + arbitration (contract §6) ------------------------------
+
+    def _dispute_eligible(self, task: Task, report) -> bool:
+        """A REJECT is disputable only when every objective gate was green.
+
+        Gate failures are machine-checked ground truth; rhetoric cannot argue
+        with an exit code, so those rejections skip the negotiation layer
+        entirely. Criteria-only rejections are LLM judgement, which is the
+        one thing worth a second opinion. Also enforces the one-appeal-per-
+        task-per-run rule via ``self.disputed_task_ids``.
+        """
+        if report.passed:
+            return False
+        if task.task_id in self.disputed_task_ids:
+            return False
+        gate = report.objective_gate or {}
+        gate_green = gate.get("passed", True)
+        return bool(gate_green)
+
+    def _run_dispute_flow(self, task: Task, handoff: Handoff, report) -> tuple[bool, str]:
+        """Run the executor-dispute + arbiter-ruling flow for one rejection.
+
+        Returns (passed, reason) to feed straight into ledger.record_verdict.
+        Marks the task as having used its one dispute regardless of outcome
+        (concede included is NOT marked here — conceding does not spend the
+        appeal, only an actual dispute does, per contract: "ONE dispute per
+        task per run" refers to an actual dispute being raised).
+        """
+        dispute_data = solicit_dispute(self.client, self.settings.executor_model, task, handoff, report)
+        if not dispute_data["dispute"]:
+            # Concede: proceed to record_verdict(passed=False) unchanged.
+            return False, _feedback_reason(report)
+
+        self.disputed_task_ids.add(task.task_id)
+        self._emit(
+            "dispute",
+            task_id=task.task_id,
+            detail={
+                "rebuttal": dispute_data["rebuttal"][:500],
+                "evidence_files": [str(e.get("file", "")) for e in dispute_data["evidence"]],
+            },
+        )
+
+        ruling = self.arbiter.rule(
+            task, handoff, report, dispute_data["rebuttal"], dispute_data["evidence"]
+        )
+        self._emit(
+            "arbitration",
+            task_id=task.task_id,
+            detail={
+                "ruling": ruling["ruling"],
+                "reasoning": ruling["reasoning"][:500],
+            },
+        )
+
+        if ruling["ruling"] == "overturn":
+            return True, f"arbiter overturned: {ruling['reasoning']}"
+
+        # Uphold: fold the arbiter's clarification into the reason so it
+        # reaches the executor's next attempt via task.last_error.
+        base_reason = _feedback_reason(report)
+        clarification = ruling["criteria_clarification"]
+        reason = base_reason
+        if clarification:
+            reason = f"{base_reason} | arbiter upheld: {clarification}"
+        return False, reason
+
     # ---- the loop ---------------------------------------------------------
 
     def run_checklist(self, requirements: str) -> dict:
-        import time
-
-        start = time.monotonic()
-
         # This overwrites the bootstrap run_id row created above with the
         # real requirements text (create_run mints its own id — the ledger's
         # `runs` table id does not have to match self.run_id used for the
@@ -163,6 +236,41 @@ class Orchestrator:
         tasks = self.planner.plan(requirements)
         self.ledger.add_tasks(tasks)
         self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
+
+        return self._drive_loop()
+
+    def resume_run(self, run_id: str) -> dict:
+        """Continue an existing run without re-planning (contract §7).
+
+        The plan already lives in the ledger (this same run_id's tasks table),
+        so there is nothing to ask the planner for. The only state surgery
+        needed is reviving BLOCKED tasks — everything else (READY, PENDING,
+        DONE, etc.) is already exactly where a fresh process would find it,
+        which is the whole point of a durable ledger: resuming looks just
+        like the loop continuing after a hiccup, not a special code path.
+
+        ``self.run_id``/``self.run_dir`` are expected to already point at the
+        existing run's directory (the caller — main.py's --resume — must
+        construct the Orchestrator against that run_id's ledger/workspace
+        before calling this; see main.py for the wiring).
+        """
+        blocked = self.ledger.tasks_by_status(TaskStatus.BLOCKED)
+        for task in blocked:
+            self.ledger.revive_blocked(task.task_id, reset_attempts=True)
+            self._emit("revive", task_id=task.task_id, detail={"run_id": run_id})
+
+        return self._drive_loop()
+
+    def _drive_loop(self) -> dict:
+        """The claim -> execute -> submit -> verify -> (dispute) -> record
+        loop, shared verbatim by a fresh run and a resumed one. Nothing here
+        is aware of whether tasks were just planned or already existed in the
+        ledger from a prior process — that is the entire point of routing
+        every decision through the ledger rather than in-memory state.
+        """
+        import time
+
+        start = time.monotonic()
 
         claims = 0
         worker_id = "orchestrator-worker-1"
@@ -201,13 +309,18 @@ class Orchestrator:
             self._emit("submit", task_id=task.task_id, detail={"outcome": handoff.outcome})
 
             report = self.verifier.verify(task, handoff)
-            reason = _feedback_reason(report)
-            new_status = self.ledger.record_verdict(task.task_id, passed=report.passed, reason=reason)
+
+            if self._dispute_eligible(task, report):
+                passed, reason = self._run_dispute_flow(task, handoff, report)
+            else:
+                passed, reason = report.passed, _feedback_reason(report)
+
+            new_status = self.ledger.record_verdict(task.task_id, passed=passed, reason=reason)
             self._emit(
                 "verdict",
                 task_id=task.task_id,
                 detail={
-                    "passed": report.passed,
+                    "passed": passed,
                     "new_status": new_status.value,
                     "reason": reason,
                     "coverage_rate": report.coverage_rate,
@@ -215,7 +328,7 @@ class Orchestrator:
             )
 
             print(f"  {status_wall(self.ledger)}   {task.task_id} "
-                  f"{'PASS' if report.passed else f'REJECT ({new_status.value})'}")
+                  f"{'PASS' if passed else f'REJECT ({new_status.value})'}")
 
         elapsed = time.monotonic() - start
         counts = self.ledger.counts()
