@@ -7,7 +7,7 @@ subjective requirements.
 Delivery spec (applies to every item): the application entry point must be
 `app.py` exposing a Flask instance named `app`; tests are plain pytest files in
 the project root; everything must be verifiable offline via `python -m pytest`
-(use Flask's test client, never a live server).
+(use Flask's test client, never a live server). The tests covering requirement N must live in a file named test_reqNN.py (requirement 3 -> test_req03.py) so delivery can be audited requirement by requirement.
 
 1. Flask app skeleton with GET /health returning JSON {"status": "ok"} and HTTP 200.
 2. SQLite Expense model with fields: id, amount, category, note, created_at (auto-set on creation).
