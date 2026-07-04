@@ -235,6 +235,56 @@ subjective grounds the executor believes are wrong.
     the added context of what a second, stronger model didn't buy from the
     first plea.
 
+## Console v2
+
+Addendum 2 (contract §9) turns the read-only status-wall console into a
+control room: parallel runs, stop/resume, live cost, and a demo mode that
+needs no API key at all. Four design points worth calling out:
+
+**Per-run telemetry via thread-local run tagging (`foreman/telemetry.py`).**
+Each run drives on its own daemon thread inside `serve.py`, and several runs
+can be executing at once. `TokenMeter` already recorded a process-wide
+per-model total; Addendum 2 adds a *second* breakdown keyed by run_id,
+attributed automatically via `threading.local()` rather than threading a
+run_id through every `chat_json`/executor call site. `Orchestrator` tags the
+calling thread with `set_current_run(self.run_id)` at the top of
+`run_checklist`/`run_tasks`/`resume_run` and clears it in a `finally`. Why
+thread-local instead of an explicit parameter: it lets every existing model
+call site stay unchanged, and — critically — it means parallel runs on
+separate threads cannot cross-contaminate each other's cost accounting; each
+thread only ever sees its own tag.
+
+**STOP sentinel design (`runs/<run_id>/STOP`).** Stopping a run is a plain
+file touch, checked at the top of `_drive_loop`'s `while True` before the
+next `dispatcher.tick()`/claim. This gives **task-boundary** granularity, not
+instant interruption: an executor attempt already claimed before the
+sentinel appeared always finishes its current claim → execute → verify →
+record cycle first. Why task-boundary and not instant kill: an executor mid-
+tool-call has no safe interrupt point that wouldn't risk a half-written
+file or an orphaned ledger row — waiting for the next natural boundary
+(`PENDING_REVIEW` or `DONE`) keeps the ledger's invariants intact with zero
+new locking. `resume_run` deletes the sentinel before re-entering the loop,
+so a resumed run never immediately re-observes a stale stop request.
+
+**`config.json` provenance record (`runs/<run_id>/config.json`).** Every run
+now carries a small JSON sidecar written at start (`models`, `mock`,
+`created_at`, `requirements_preview`) and merged with `usage_final`/`est_usd`
+in a `finally` when the run ends — whether it finished naturally, was
+stopped, or errored. This is what lets the console show which models a run
+actually used and its final cost after the process that ran it is long gone,
+without re-deriving anything from the ledger's `attempts` rows.
+
+**`foreman/mocks.py` module.** The scripted fake planner/executor/verifier
+used to live inline in `main.py`'s `--mock` branch; Addendum 2 relocates them
+here so `serve.py`'s "Demo mode" checkbox can drive the *exact* same fakes
+without importing the CLI module, and so both call sites share one
+`build_mock_orchestrator()` factory. `MockExecutor`/`MockVerifier` also take
+an optional `delay_s` (demo-pacing addition, not part of the frozen
+contract): every fake `execute()`/`verify()` call sleeps that long before
+returning, purely so a recorded demo run paces slowly enough to watch the
+status wall fill in instead of finishing before the screen recording starts.
+Zero by default — existing callers and the test suite see no timing change.
+
 ## Loop flowchart
 
 ```mermaid

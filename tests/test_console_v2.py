@@ -390,3 +390,69 @@ def test_mask_key_never_returns_full_key():
     assert masked is not None
     assert "1234567890abcdef" not in masked
     assert masked.endswith("ef")
+
+
+# ---- demo pacing: mock run delay_s ---------------------------------------------
+
+
+def test_mock_run_delay_is_honored(tmp_path):
+    """A mock run with a tiny per-call delay on 2 tasks takes at least
+    2x delay_s wall-clock (one execute + one verify per task, always_pass so
+    no retries) and still completes normally — pacing must not change the
+    outcome, only the timing."""
+    from foreman.mocks import build_mock_orchestrator, MockVerifier
+
+    run_root = tmp_path / "runs"
+    orch = build_mock_orchestrator(run_root=str(run_root), delay_s=0.05)
+    orch.verifier = MockVerifier(always_pass=True, delay_s=0.05)  # isolate timing from the retry ladder
+
+    start = time.monotonic()
+    summary = orch.run_checklist("1. step one\n2. step two\n")
+    elapsed = time.monotonic() - start
+
+    assert summary["complete"] is True
+    assert summary["done"] == 2
+    # 2 tasks * (1 execute + 1 verify) * 0.05s = 0.2s minimum.
+    assert elapsed >= 0.2
+
+
+def test_mock_run_zero_delay_is_fast_by_default(tmp_path):
+    """delay_s defaults to 0.0 — existing (pre-pacing-feature) callers and the
+    rest of the test suite must see no behavior change."""
+    from foreman.mocks import build_mock_orchestrator
+
+    run_root = tmp_path / "runs"
+    orch = build_mock_orchestrator(run_root=str(run_root))
+
+    start = time.monotonic()
+    summary = orch.run_checklist("1. step one\n2. step two\n")
+    elapsed = time.monotonic() - start
+
+    assert summary["complete"] is True
+    assert elapsed < 2.0  # generous ceiling; this run has zero artificial delay
+
+
+def test_clamp_mock_delay_s():
+    import serve
+
+    assert serve._clamp_mock_delay_s(5) == 5.0
+    assert serve._clamp_mock_delay_s(31) == 30.0
+    assert serve._clamp_mock_delay_s(100) == 30.0
+    assert serve._clamp_mock_delay_s(-1) == 0.0
+    assert serve._clamp_mock_delay_s(-0.001) == 0.0
+    assert serve._clamp_mock_delay_s(0) == 0.0
+    assert serve._clamp_mock_delay_s("not-a-number") == 0.0
+    assert serve._clamp_mock_delay_s(None) == 0.0
+
+
+def test_default_mock_delay_s_reads_env(monkeypatch):
+    import serve
+
+    monkeypatch.delenv("FOREMAN_MOCK_DELAY", raising=False)
+    assert serve._default_mock_delay_s() == 0.0
+
+    monkeypatch.setenv("FOREMAN_MOCK_DELAY", "4")
+    assert serve._default_mock_delay_s() == 4.0
+
+    monkeypatch.setenv("FOREMAN_MOCK_DELAY", "not-a-number")
+    assert serve._default_mock_delay_s() == 0.0

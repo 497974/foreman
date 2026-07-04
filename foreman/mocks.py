@@ -16,6 +16,7 @@ otherwise try to reach a real chat client mocks intentionally don't have.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from .arbiter import Arbiter
@@ -68,10 +69,17 @@ class MockExecutor:
     serve.py's mock runs use.
     """
 
-    def __init__(self, reject_first_attempt: bool = False):
+    def __init__(self, reject_first_attempt: bool = False, delay_s: float = 0.0):
         self.reject_first_attempt = reject_first_attempt
+        self.delay_s = delay_s
 
     def execute(self, task: Task, dependency_handoffs: list[Handoff]) -> Handoff:
+        # Demo-pacing hook only (contract-adjacent, not a frozen interface):
+        # filming the video needs a mock run slow enough to see the status
+        # wall fill in cell-by-cell rather than finishing before the screen
+        # recorder's first frame. Zero by default so tests stay fast.
+        if self.delay_s:
+            time.sleep(self.delay_s)
         return Handoff(
             task_id=task.task_id,
             attempt_no=task.attempt_count,
@@ -111,22 +119,33 @@ class MockVerifier:
                 "passed": passed, "output_tail": "",
             }
 
-    def __init__(self, always_pass: bool = False):
+    def __init__(self, always_pass: bool = False, delay_s: float = 0.0):
         self.always_pass = always_pass
+        self.delay_s = delay_s
 
     def verify(self, task: Task, handoff: Handoff):
+        # Same demo-pacing hook as MockExecutor.execute — see there.
+        if self.delay_s:
+            time.sleep(self.delay_s)
         if not self.always_pass and task.attempt_count < 2:
             return self._Report(False, f"mock rejection on attempt {task.attempt_count}")
         return self._Report(True, "mock: all acceptance criteria satisfied")
 
 
-def build_mock_orchestrator(run_root: str = "runs"):
+def build_mock_orchestrator(run_root: str = "runs", delay_s: float = 0.0):
     """Factory used by BOTH main.py --mock and serve.py's mock runs.
 
     Constructs the same attribute set Orchestrator.__init__ would, but with
     fakes wired in for planner/executor/verifier/client, so no Settings and
     no DASHSCOPE_API_KEY are required. Returns a ready-to-drive Orchestrator
     (call .run_checklist(requirements) on it).
+
+    ``delay_s`` (demo pacing, not a frozen contract addition): passed through
+    to MockExecutor/MockVerifier so every execute()/verify() call sleeps that
+    long before returning. Purely cosmetic — lets a mock run be slow enough
+    to film (watch the status wall fill in) without touching any API. 0.0
+    (the default) keeps the mock loop as fast as it always was, so existing
+    callers and the test suite are unaffected.
     """
     from .orchestrator import Orchestrator
 
@@ -155,8 +174,8 @@ def build_mock_orchestrator(run_root: str = "runs"):
     orch.dispatcher = Dispatcher(orch.ledger)
 
     orch.planner = MockPlanner()
-    orch.executor = MockExecutor()
-    orch.verifier = MockVerifier()
+    orch.executor = MockExecutor(delay_s=delay_s)
+    orch.verifier = MockVerifier(delay_s=delay_s)
     # MockVerifier's rejections always report a red gate (see _Report), so
     # _dispute_eligible always short-circuits before touching the arbiter —
     # this Arbiter's client is never actually called, but the attribute must

@@ -221,12 +221,44 @@ def _start_real_run(requirements: str, models: dict) -> str:
     return run_id
 
 
-def _start_mock_run(requirements: str) -> str:
+def _default_mock_delay_s() -> float:
+    """Env-var default for mock pacing (FOREMAN_MOCK_DELAY), used when the
+    POST body omits "mock_delay_s" entirely — lets filming set it once via
+    the environment (e.g. before start_foreman.bat) instead of on every
+    request. Falls back to 0.0 (unchanged, instant mock runs) on anything
+    unset or unparseable.
+    """
+    raw = os.environ.get("FOREMAN_MOCK_DELAY", "")
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
+
+
+def _clamp_mock_delay_s(value) -> float:
+    """Clamp to [0, 30] seconds per call — a demo-pacing knob, not a real
+    timeout, so a stray large or negative value can't hang or error a run."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if v < 0:
+        return 0.0
+    if v > 30:
+        return 30.0
+    return v
+
+
+def _start_mock_run(requirements: str, mock_delay_s: float = 0.0) -> str:
     """Build a mock Orchestrator (foreman.mocks) and run it on a daemon
-    thread — no Settings/API key required (contract §9.5/§9.6)."""
+    thread — no Settings/API key required (contract §9.5/§9.6).
+
+    ``mock_delay_s`` paces each fake execute()/verify() call (demo filming
+    aid, see foreman/mocks.py) — 0.0 keeps mock runs instant as before.
+    """
     from foreman.mocks import build_mock_orchestrator
 
-    orch = build_mock_orchestrator(run_root=RUN_ROOT)
+    orch = build_mock_orchestrator(run_root=RUN_ROOT, delay_s=mock_delay_s)
     run_id = orch.run_id
 
     _write_run_config(orch.run_dir, orch.settings, mock=True, requirements=requirements)
@@ -425,7 +457,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if mock:
             # Demo mode requires NO key at all (contract §9.6).
-            run_id = _start_mock_run(requirements)
+            if "mock_delay_s" in payload:
+                mock_delay_s = _clamp_mock_delay_s(payload.get("mock_delay_s"))
+            else:
+                mock_delay_s = _clamp_mock_delay_s(_default_mock_delay_s())
+            run_id = _start_mock_run(requirements, mock_delay_s=mock_delay_s)
             self._send_json(200, {"run_id": run_id})
             return
 

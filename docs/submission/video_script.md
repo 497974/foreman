@@ -25,6 +25,15 @@ nothing is staged or faked.
 | 2:40–2:50 | On-screen routing table graphic: Planner = qwen-max, Executor = qwen3-coder-plus / qwen-plus (fallback noted), Verifier = qwen-plus (JSON mode), Arbiter = qwen-max. | "Four roles, matched to model strength: qwen-max plans and arbitrates, qwen-coder and qwen-plus execute and verify." | "四个角色，按模型能力匹配：qwen-max 负责规划与仲裁，qwen-coder 与 qwen-plus 负责执行与验证。" |
 | 2:50–3:00 | Foreman logo/wordmark (steel-blue + orange, matching webui palette) over the README architecture diagram, fading to repo URL + "Track 3: Agent Society — Qwen Cloud Global AI Hackathon." | "Foreman. Because agents that claim victory should have to prove it. Track 3, Agent Society." | "Foreman。宣称胜利的智能体，应该拿出证据。Track 3，智能体社会赛道。" |
 
+## Shot prep
+
+- **Pace a mock run for the camera**: a demo-mode run normally finishes in
+  well under a second (no LLM latency), too fast to watch the status wall
+  fill in. Slow it down with `mock_delay_s` on the API call, or
+  `FOREMAN_MOCK_DELAY` before starting the console:
+  `curl -X POST /api/runs -d '{"requirements":"...","mock":true,"mock_delay_s":4}'`
+  or set `FOREMAN_MOCK_DELAY=4` before running `start_foreman.bat`.
+
 ## Recording tips (Windows)
 
 - **Screen + audio**: ScreenPal (free tier covers 3-min single-take + trim) or

@@ -74,6 +74,11 @@ def main() -> int:
     group.add_argument("--checklist", help="path to a requirements checklist (markdown)")
     group.add_argument("--resume", metavar="RUN_ID", help="resume an existing run by id (no re-planning)")
     parser.add_argument("--mock", action="store_true", help="use scripted fake executor/verifier, no API key needed")
+    parser.add_argument(
+        "--mock-delay", type=float, default=0.0, metavar="SECONDS",
+        help="only with --mock: sleep this long in each fake execute()/verify() call, "
+        "so a demo run paces slowly enough to film instead of finishing instantly (default 0)",
+    )
     parser.add_argument("--run-root", default="runs", help="directory under which run artifacts are stored")
     args = parser.parse_args()
 
@@ -106,7 +111,7 @@ def main() -> int:
         # Verifier) so no Settings/API key/network is ever touched.
         from foreman.mocks import build_mock_orchestrator
 
-        orch = build_mock_orchestrator(run_root=args.run_root)
+        orch = build_mock_orchestrator(run_root=args.run_root, delay_s=args.mock_delay)
     else:
         settings = Settings.from_env()
         orch = Orchestrator(settings, run_root=args.run_root)

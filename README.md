@@ -198,8 +198,9 @@ python demo/smoke_run.py                                          # fake executo
 python main.py --checklist demo/requirements_mini.md --mock        # same loop via main.py's CLI
 ```
 
-Run the test suite (92 tests: concurrency safety, retry ladder, crash
-recovery, dispute/arbitration, resume, web API):
+Run the test suite (109 tests: concurrency safety, retry ladder, crash
+recovery, dispute/arbitration, resume, web API, Console v2 telemetry/pricing/
+stop-resume/config):
 
 ```bash
 python -m pytest -q
@@ -210,6 +211,56 @@ Real run with the web console (requires `DASHSCOPE_API_KEY` in `.env`):
 ```bash
 start_foreman.bat            # Windows: installs deps, checks .env, opens the console
 python serve.py               # or directly; add --no-browser for headless environments
+```
+
+### Product Console v2
+
+The console (`http://127.0.0.1:8787`) is a full-featured control room, not
+just a status wall:
+
+- **Per-role model selectors** in the New Run form (planner/executor/
+  verifier), each with a "custom…" option for any DashScope model name not in
+  the known list — no code change needed to try a new model.
+- **Parallel runs**: start several checklists back to back; the run list
+  polls every 3s and shows a status dot (green done / amber active / red has
+  blocked tasks / grey idle) plus a `MOCK` chip for demo runs.
+- **Stop (task-boundary graceful) + Resume**: Stop writes a sentinel the
+  orchestrator checks between tasks — an in-flight executor attempt always
+  finishes before the loop halts. Resume reopens the same ledger and
+  continues with no re-planning.
+- **Per-run live cost accounting**: a `≈$0.0123 · 45,678 tok` readout on the
+  run header, backed by thread-local per-run token tagging (see
+  [Console v2 architecture](docs/ARCHITECTURE.md#console-v2)) plus a rough
+  USD estimate (`foreman/pricing.py`).
+- **Workspace zip download** and **run archive** (moves a finished run out of
+  the active list without deleting it).
+- **Requirements templates**: the New Run form's template dropdown loads
+  straight from `demo/*.md`.
+- **Config health panel**: `/api/config` reports whether `DASHSCOPE_API_KEY`
+  is present and a masked preview (`sk-abcde…yz`) — the full key is never
+  sent to the browser.
+
+**Demo mode — the full console experience with zero API key.** Check "Demo
+mode" in the New Run form (or POST with `"mock": true`) and every one of the
+features above — parallel runs, stop/resume, cost accounting, download,
+archive — runs against a scripted fake planner/executor/verifier that never
+touches the network. Judges can try the entire product in seconds without a
+DashScope key. A mock run normally finishes in well under a second, which is
+too fast to watch fill in on camera; set `FOREMAN_MOCK_DELAY=<seconds>`
+(clamped to 0–30) before starting the console, or pass
+`"mock_delay_s": <seconds>` in the `POST /api/runs` body, to slow every mock
+execute()/verify() call down to a filmable pace:
+
+```bash
+# CLI: watch a mock run pace itself instead of finishing instantly
+python main.py --checklist demo/requirements_mini.md --mock --mock-delay 0.5
+
+# Console: set once before start_foreman.bat / serve.py, applies to every mock run
+set FOREMAN_MOCK_DELAY=4
+start_foreman.bat
+
+# Or per-request via the API directly:
+curl -X POST http://127.0.0.1:8787/api/runs -d "{\"requirements\":\"1. step one\n2. step two\",\"mock\":true,\"mock_delay_s\":4}"
 ```
 
 The console shows a four-color status wall (one cell per task), a live event
@@ -227,6 +278,27 @@ Run the three-condition evaluation yourself:
 ```bash
 python scripts/evaluate.py --checklist demo/requirements_mini.md --conditions ABC --out evals/
 ```
+
+## Status
+
+- [x] Task-DAG planner + zero-LLM dispatcher + durable SQLite ledger
+- [x] Clean-context executor with a jailed workspace + tool-calling loop
+- [x] Objective-gate-first verifier (real tests before any LLM opinion)
+- [x] Dispute/arbitration negotiation layer (one appeal per task)
+- [x] Resume from ledger (no re-planning)
+- [x] Three-condition evaluation harness (A/B/C) with a frozen exam
+- [x] Local web console (status wall, live event feed, drawer)
+- [x] Product Console v2: per-role model selectors, parallel runs, stop/
+      resume, per-run live cost accounting, workspace download, run archive,
+      requirements templates, config health panel
+- [x] Demo mode: full console experience with zero API key, plus
+      `FOREMAN_MOCK_DELAY`/`mock_delay_s` pacing for filming
+- [x] Test suite green (109 tests, no API key required)
+- [ ] 20-item full-checklist evaluation (quota-gated — needs a live
+      DashScope run against `demo/requirements_full.md`)
+- [ ] Function Compute deployment proof (steps are written in
+      [`docs/DEPLOY.md`](docs/DEPLOY.md); not yet executed end-to-end against
+      a live FC instance)
 
 ## Qwen Cloud / Alibaba Cloud integration
 
