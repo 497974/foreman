@@ -232,3 +232,106 @@ serve.py at repo root:
 Tests: light — one test that the API layer's ledger-reading functions return
 sane JSON shapes against a ledger fixture (no HTTP server needed; factor the
 data-access functions so they're importable and testable without sockets).
+
+---
+
+# Addendum 2 (frozen 2026-07-04 evening): Product Console v2
+
+Two agents build this in parallel: BACKEND owns python files, FRONTEND owns
+foreman/webui/index.html only. The API shapes below are the integration
+contract — code against them exactly.
+
+## 9. Backend (telemetry, stop/resume, config, mocks, API v2)
+
+### 9.1 Per-run telemetry (foreman/telemetry.py)
+Thread-local run tagging: `set_current_run(run_id | None)`, `get_current_run()`.
+`TokenMeter.record(...)` additionally accumulates under the current thread's
+run tag when set. New: `METER.run_totals(run_id) -> {"per_model": {...},
+"totals": {"prompt_tokens": int, "completion_tokens": int, "calls": int}}`.
+Orchestrator sets the tag at the TOP of run_checklist / run_tasks / resume_run
+(they execute on the worker thread) and clears it in a finally.
+
+### 9.2 Pricing (foreman/pricing.py, new)
+`PRICES: dict[str, tuple[float, float]]` USD per 1M input/output tokens —
+approximations as of 2026-07 (comment says verify in console): qwen-max
+(1.6, 6.4), qwen-plus (0.4, 1.2), qwen3-coder-plus (1.0, 5.0), qwen-turbo
+(0.05, 0.2), qwen-flash (0.1, 0.4), DEFAULT (0.5, 1.5).
+`estimate_usd(per_model: dict) -> float` (uses DEFAULT for unknown models).
+
+### 9.3 Stop sentinel + resume
+- Stop = create file `runs/<run_id>/STOP`. Orchestrator._drive_loop checks for
+  it at the top of every iteration; when present: emit event "stopped", return
+  summary with `"stopped": True`. Task-boundary granularity (an in-flight
+  executor attempt finishes first) — document in docstring.
+- resume_run: delete the STOP sentinel if present before entering the loop
+  (it already revives BLOCKED tasks; READY/expired-lease tasks flow naturally).
+
+### 9.4 Run config + persisted usage (runs/<run_id>/config.json)
+serve.py writes at start: `{"models": {"planner","executor","verifier"},
+"mock": bool, "created_at": iso, "requirements_preview": first 200 chars}`.
+Orchestrator (or serve's worker wrapper) merges `"usage_final":
+METER.run_totals(run_id)` + `"est_usd"` into it when the run finishes/stops.
+webui_data.get_run_detail returns `"config"` (the file, or null) and
+`"usage"` (live METER.run_totals if nonzero else usage_final) + `"est_usd"`.
+
+### 9.5 Mocks module (foreman/mocks.py, new)
+Move main.py's mock planner/executor/verifier classes here (MockPlanner splits
+numbered checklist lines into Tasks with test_strategy `python -c "print('ok')"`;
+MockExecutor optionally rejects each task's first attempt; MockVerifier real
+objective_gate shape, gate red on reject so dispute flow is bypassed).
+main.py imports from here — CLI behavior unchanged. serve.py uses them for
+mock runs. Mock runs write the same ledger/events artifacts (UI identical) and
+finish in seconds.
+
+### 9.6 API v2 (serve.py + foreman/webui_data.py)
+- POST /api/runs  body {"requirements": str, "models": {"planner"?, "executor"?,
+  "verifier"?}, "mock"?: bool} -> {"run_id"}. Models override via
+  dataclasses.replace(Settings...). mock:true requires NO key (skip key check).
+- POST /api/runs/<id>/stop -> 200 {"stopped": true} (writes sentinel;
+  idempotent; 404 unknown run).
+- POST /api/runs/<id>/resume -> {"run_id"} (409 if that run's thread is still
+  active; 400 for mock runs "mock runs are not resumable"; deletes sentinel,
+  spawns resume_run on a daemon thread, registers in _active_runs).
+- GET  /api/runs/<id>/download -> application/zip of workspace/ (in-memory
+  zipfile; exclude __pycache__, *.db, *.db-*; filename foreman-<id>.zip).
+- DELETE /api/runs/<id> -> archive: move runs/<id> into runs/_archived/<id>
+  (409 if active). list_runs must skip _archived.
+- GET /api/config -> {"key_present": bool, "key_masked": "sk-ws-…XQ" or null,
+  "endpoint": base_url, "models_known": [qwen-max, qwen-plus, qwen3-coder-plus,
+  qwen-turbo, qwen-flash], "defaults": {planner, executor, verifier}}.
+  NEVER return the full key.
+- GET /api/templates -> [{"name": file stem, "content": str}] from demo/*.md.
+- runs list items gain: "active": bool (thread alive in _active_runs),
+  "mock": bool (from config.json), "est_usd": float|null.
+
+Error surfacing: the background worker already emits an "error" event on
+exception; ADDITIONALLY, if the exception text contains "insufficient_quota"
+emit detail {"friendly": "Model free quota exhausted — switch the executor
+model in New Run, or add billing/coupon in the console."}.
+
+Tests (no key): telemetry two-thread run tagging isolation; pricing math incl.
+unknown model; STOP sentinel stops a mock run between tasks + resume completes
+it; config.json write/read via get_run_detail; download zip helper excludes
+db/__pycache__; archive moves dir and list_runs skips it. Full suite stays green.
+
+## 10. Frontend (foreman/webui/index.html ONLY)
+Single self-contained file, same palette (steel blue #1E4E79 / safety orange
+#D9700A / green/red/amber/grey statuses), English, no CDN.
+Layout: LEFT SIDEBAR = (a) "New Run" card: template dropdown (GET
+/api/templates; selecting fills textarea), requirements textarea, three model
+<select>s populated from /api/config (each with a "custom…" option revealing a
+text input), "Demo mode — runs without an API key" checkbox (checked+locked
+with a hint when key_present=false), Start button; (b) runs list (poll
+/api/runs every 3s): per row status dot (green=complete, amber=active,
+red=has blocked tasks, grey=idle incomplete), short id, HH:MM created, est_usd
+when present, "MOCK" chip for mock runs; click = select run.
+MAIN AREA (per selected run): header row = run id + config chips (models,
+mock), live cost "≈$0.0123 · 45,678 tok" (from run detail poll), elapsed
+clock, buttons: Stop (only while active), Resume (only when idle & incomplete
+& not mock), Download (GET download), Archive (DELETE + confirm()).
+Below: existing status wall + task drawer + event feed (keep; drawer
+additionally renders each attempt's handoff summary JSON fields nicely:
+completed_work, files_touched, gotchas — parse attempts[].summary as JSON,
+fall back to raw text). Error events + quota-friendly messages render as a
+dismissible red banner above the wall. Empty states for no-runs and no-key.
+No frameworks; keep total file under ~60KB.
