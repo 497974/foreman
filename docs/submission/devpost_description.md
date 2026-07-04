@@ -62,7 +62,7 @@ at `dashscope-intl`). Per-role model routing:
 | Role | Model | Why |
 |---|---|---|
 | Planner | `qwen-max` | Needs the most reasoning depth: decomposing a checklist into a valid, acyclic task DAG with runnable tests is a planning problem, not a coding one. |
-| Executor | `qwen3-coder-plus` (fallback `qwen-plus` on quota exhaustion) | Code-specialized model for the actual tool-calling implementation loop. |
+| Executor | `qwen3-coder-plus` or `qwen-plus` (env-switchable per role) | Code-specialized model for the tool-calling implementation loop. Our evaluation intentionally ran the *weaker* `qwen-plus` executor and still reached 5/5 — the orchestration compensates for model strength. |
 | Verifier | `qwen-plus`, JSON mode | Objective gates (real pytest/build) run first and are final on failure; the LLM only scores criteria once the gate is green, so verifier model strength matters less than gate correctness. |
 | Arbiter | `qwen-max` | Same tier as the planner on purpose — it must outrank both the executor that disputes and the verifier being disputed against. |
 

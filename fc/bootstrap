@@ -1,0 +1,39 @@
+#!/bin/bash
+# Alibaba Cloud Function Compute (FC) 3.0 custom-runtime entrypoint for Foreman.
+#
+# FC's "custom runtime" contract: the platform starts this file as the
+# function's process and expects it to bind an HTTP server on 0.0.0.0:9000
+# (the port is fixed by the FC web-function convention; do not change it
+# without also changing the function's port setting in the console). FC's
+# gateway then reverse-proxies every request/response to that port.
+#
+# This file MUST:
+#   - have LF (Unix) line endings, not CRLF — a CRLF shebang line fails with
+#     "bad interpreter" on the FC Linux host. If you edit this on Windows,
+#     save/convert as LF (e.g. `git config core.autocrlf false`, or open in
+#     an editor set to LF, or `dos2unix fc/bootstrap`).
+#   - be marked executable in the zip (build_package.py sets the unix file
+#     mode bit when adding it; if you rebuild the zip by hand instead, run
+#     `chmod +x fc/bootstrap` before zipping, or the FC runtime will reject it
+#     with a permission error at boot).
+#
+# Working directory: FC unzips the deployment package to /code and runs this
+# script with cwd=/code, so relative paths below resolve against the repo
+# root exactly like a local checkout.
+set -euo pipefail
+
+# Vendored third-party deps (see fc/build_package.py --vendor / option 2 in
+# docs/DEPLOY.md): if fc/vendor exists, prepend it to PYTHONPATH so `import
+# openai` resolves without relying on the console's layer/pip-install step.
+if [ -d "/code/fc/vendor" ]; then
+    export PYTHONPATH="/code/fc/vendor${PYTHONPATH:+:$PYTHONPATH}"
+fi
+
+cd /code
+
+# --host 0.0.0.0: serve.py defaults to 127.0.0.1 (loopback-only, correct for
+# a local dev machine) but FC's gateway connects from outside the container,
+# so the web console must listen on all interfaces here.
+# --no-browser: there is no display in the FC sandbox; webbrowser.open()
+# would just silently no-op, but skip it explicitly for a cleaner boot log.
+exec python3 serve.py --host 0.0.0.0 --port 9000 --no-browser

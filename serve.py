@@ -194,6 +194,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Foreman local web console")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument(
+        "--host", default="127.0.0.1",
+        help="bind address (use 0.0.0.0 for cloud/container runtimes, e.g. Alibaba "
+        "Cloud Function Compute custom runtime, which requires listening on all "
+        "interfaces; default 127.0.0.1 keeps local runs loopback-only)",
+    )
+    parser.add_argument(
         "--no-browser", action="store_true",
         help="don't auto-open a browser (for previews / headless environments)",
     )
@@ -201,8 +207,8 @@ def main() -> int:
 
     Path(RUN_ROOT).mkdir(parents=True, exist_ok=True)
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    url = f"http://127.0.0.1:{args.port}"
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    url = f"http://{args.host}:{args.port}"
     print(f"Foreman web console: {url}")
     print("Press Ctrl+C to stop.")
 

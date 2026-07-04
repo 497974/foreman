@@ -13,7 +13,15 @@ venv/
 runs/
 .env
 
+# FC deployment build artifacts (regenerate with `python fc/build_package.py`)
+fc/foreman-fc.zip
+fc/vendor/
+
 # OS / editor
 .DS_Store
 .idea/
 .vscode/
+
+# generated evaluation workspaces are receipts we keep locally, not in git
+evals/workspaces_*/
+evals_shakedown*.log

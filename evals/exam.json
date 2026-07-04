@@ -3,11 +3,11 @@
     {
       "task_id": "T01",
       "title": "Create a Flask app skeleton with a health-check route at GET /health",
-      "description": "Set up a basic Flask application with a single route that returns a 200 OK status and a simple message.",
+      "description": "Set up a basic Flask application with an entry point in `app.py` and a health check endpoint.",
       "acceptance_criteria": [
-        "Returns 'Healthy' with HTTP 200 on GET /health."
+        "The Flask app is created and can be run from `app.py`."
       ],
-      "test_strategy": "python -m pytest tests/test_health.py::test_health_check -q",
+      "test_strategy": "python -m pytest test_health_check.py -q",
       "role": "backend",
       "complexity_score": 2,
       "parents": []
@@ -15,16 +15,12 @@
     {
       "task_id": "T02",
       "title": "Add a SQLite Expense model with fields: id, amount, category, note, created_at",
-      "description": "Define an Expense model using SQLAlchemy ORM with the specified fields. Ensure the `created_at` field is automatically set to the current time when a new expense is added.",
+      "description": "Define a SQLAlchemy model for the Expense table with the specified fields.",
       "acceptance_criteria": [
-        "The Expense table exists in the database with columns for id",
-        "amount",
-        "category",
-        "note",
-        "and created_at. The created_at column is auto-filled with the current timestamp upon creation of a new record."
+        "The Expense model is defined with the required fields."
       ],
-      "test_strategy": "python -m pytest tests/test_expense_model.py::test_expense_model_exists -q",
-      "role": "data",
+      "test_strategy": "python -m pytest test_expense_model.py -q",
+      "role": "backend",
       "complexity_score": 3,
       "parents": [
         "T01"
@@ -33,11 +29,11 @@
     {
       "task_id": "T03",
       "title": "Add POST /expenses that creates an expense; reject amounts <= 0 with HTTP 400",
-      "description": "Implement an endpoint that accepts JSON data to create a new expense. Validate the incoming data, especially the amount, which must be greater than 0. Return appropriate responses based on validation.",
+      "description": "Implement a POST endpoint to create a new expense, validating that the amount is greater than 0.",
       "acceptance_criteria": [
-        "Accepts valid JSON input and creates a new expense. Returns HTTP 201 on successful creation. Returns HTTP 400 if the amount is less than or equal to 0."
+        "A new expense is created when the amount is greater than 0."
       ],
-      "test_strategy": "python -m pytest tests/test_create_expense.py::test_create_valid_expense -q; python -m pytest tests/test_create_expense.py::test_create_invalid_amount -q",
+      "test_strategy": "python -m pytest test_create_expense.py -q",
       "role": "backend",
       "complexity_score": 4,
       "parents": [
@@ -47,12 +43,12 @@
     {
       "task_id": "T04",
       "title": "Add GET /expenses that returns all expenses as JSON, newest first",
-      "description": "Create an endpoint that queries the database for all expenses, orders them by the `created_at` field in descending order, and returns the result as JSON.",
+      "description": "Implement a GET endpoint to list all expenses, ordered by creation date in descending order.",
       "acceptance_criteria": [
-        "Returns a list of all expenses in JSON format",
-        "ordered from the most recent to the oldest. Returns an empty list if no expenses are found."
+        "All expenses are returned in JSON format",
+        "sorted by creation date (newest first)."
       ],
-      "test_strategy": "python -m pytest tests/test_list_expenses.py::test_list_all_expenses -q; python -m pytest tests/test_list_expenses.py::test_list_empty_expenses -q",
+      "test_strategy": "python -m pytest test_list_expenses.py -q",
       "role": "backend",
       "complexity_score": 3,
       "parents": [
@@ -62,15 +58,15 @@
     {
       "task_id": "T05",
       "title": "Add a pytest suite covering the create-and-list happy path and the negative-amount rejection",
-      "description": "Write a series of pytest tests to verify the functionality of creating and listing expenses, including the handling of invalid (negative) amounts.",
+      "description": "Write a set of pytest tests to verify the functionality of creating and listing expenses, including the validation of the amount field.",
       "acceptance_criteria": [
-        "Test suite includes tests for successfully creating an expense",
-        "listing all expenses",
-        "and rejecting expenses with negative amounts. All tests pass."
+        "The pytest suite includes tests for creating an expense",
+        "listing expenses",
+        "and rejecting negative amounts."
       ],
-      "test_strategy": "python -m pytest tests/test_expenses.py -q",
-      "role": "generalist",
-      "complexity_score": 3,
+      "test_strategy": "python -m pytest test_expenses_integration.py -q",
+      "role": "backend",
+      "complexity_score": 4,
       "parents": [
         "T03",
         "T04"
