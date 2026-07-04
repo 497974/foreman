@@ -32,8 +32,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from foreman import webui_data
 from foreman.config import Settings, load_env
 
-RUN_ROOT = "runs"
-WEBUI_DIR = Path(__file__).parent / "foreman" / "webui"
+# Anchor everything to the repo (this file's directory), never the process
+# cwd — the console must work when launched from a .bat, an IDE preview, or a
+# cloud runtime whose working directory is somewhere else entirely.
+REPO_ROOT = Path(__file__).parent
+RUN_ROOT = str(REPO_ROOT / "runs")
+WEBUI_DIR = REPO_ROOT / "foreman" / "webui"
 INDEX_HTML = WEBUI_DIR / "index.html"
 
 # Active background runs, keyed by run_id, so a second POST doesn't need to
@@ -55,7 +59,7 @@ def _start_run_in_background(requirements: str) -> str:
     """
     from foreman.orchestrator import Orchestrator
 
-    settings = Settings.from_env()  # raises RuntimeError if DASHSCOPE_API_KEY missing
+    settings = Settings.from_env(REPO_ROOT / ".env")  # raises RuntimeError if key missing
     orch = Orchestrator(settings, run_root=RUN_ROOT)
     run_id = orch.run_id
 
@@ -189,6 +193,10 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     parser = argparse.ArgumentParser(description="Foreman local web console")
     parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument(
+        "--no-browser", action="store_true",
+        help="don't auto-open a browser (for previews / headless environments)",
+    )
     args = parser.parse_args()
 
     Path(RUN_ROOT).mkdir(parents=True, exist_ok=True)
@@ -198,10 +206,11 @@ def main() -> int:
     print(f"Foreman web console: {url}")
     print("Press Ctrl+C to stop.")
 
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass  # headless environments: no browser to open, still serve fine
+    if not args.no_browser:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass  # headless environments: no browser to open, still serve fine
 
     try:
         server.serve_forever()
