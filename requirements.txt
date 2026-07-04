@@ -1,12 +1,7 @@
-# Core orchestration
-langgraph>=0.2.0
-langchain-core>=0.3.0
-
-# Qwen via DashScope (OpenAI-compatible mode)
+# Qwen via DashScope (OpenAI-compatible mode) — the only runtime dependency.
+# The orchestration core (ledger/dispatcher/state machine) is stdlib-only by
+# design: deterministic scheduling should not need a framework.
 openai>=1.40.0
-
-# Data / validation
-pydantic>=2.0.0
 
 # Dev / test
 pytest>=8.0.0

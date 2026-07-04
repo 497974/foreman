@@ -150,3 +150,85 @@ Print the ASCII status wall after each verdict (reuse smoke_run's WALL idea).
 test_strategy must be offline-runnable: pytest / python -c assertions only —
 no curl against a live server, no manual steps. (Flask apps are tested via
 their test client.)
+
+---
+
+# Addendum (frozen 2026-07-04, after first all-green e2e)
+
+## 6. Dispute & Arbitration (foreman/arbiter.py + orchestrator wiring)
+
+The negotiation layer. Grounds: a verifier is ~80%-reliable LLM judgement when
+gates can't decide; the graded party deserves one evidence-based appeal.
+
+Eligibility: a REJECT where ALL objective gates were green (rejection came only
+from criteria scoring). Gate failures are not disputable — machines outrank
+rhetoric. ONE dispute per task per run (track disputed_task_ids in orchestrator).
+
+Flow (inside orchestrator, BETWEEN verifier.verify and ledger.record_verdict):
+1. Ask the executor model (one chat_json call, no tools):
+   system: "You may dispute a rejection ONLY with concrete evidence..."
+   user: task card + your handoff + the verification report items/feedback.
+   -> {"dispute": bool, "rebuttal": str, "evidence": [{"file": str, "claim": str}]}
+   If dispute=false (concede): proceed to record_verdict(passed=False) as usual.
+2. If dispute=true: Arbiter = planner model (qwen-max). Read the ACTUAL contents
+   of every evidence file (workspace.read_file, 4000-char cap). chat_json ->
+   {"ruling": "overturn"|"uphold", "reasoning": str, "criteria_clarification": str}
+3. ruling=overturn -> record_verdict(passed=True, reason="arbiter overturned:
+   <reasoning>"). ruling=uphold -> record_verdict(passed=False, reason=
+   verifier reason + " | arbiter upheld: " + criteria_clarification) so the
+   clarification reaches the next attempt via last_error.
+4. Events: append "dispute" and "arbitration" events (task_id, detail with
+   rebuttal/ruling excerpts) to events.jsonl.
+
+class Arbiter: __init__(client, model, workspace); rule(task, handoff, report,
+rebuttal, evidence) -> dict. Executor-side dispute prompt lives in orchestrator
+or arbiter module — implementer's choice, but NO tool loop, single JSON calls.
+
+Unit tests (fake client): concede path records reject unchanged; overturn path
+records pass; uphold path appends clarification to reason; gate-failure
+rejections never trigger the dispute flow; one-dispute-per-task enforced.
+
+## 7. Resume (--resume RUN_ID in main.py + Orchestrator.resume_run)
+
+Resume is a headline feature (durable ledger), not a convenience. 
+`python main.py --resume run_xxx`: reopen runs/run_xxx/ledger.db + workspace,
+revive_blocked(reset_attempts=True) every BLOCKED task, then enter the normal
+loop (no re-planning; the plan lives in the ledger). Events keep appending to
+the same events.jsonl. Orchestrator.resume_run(run_id) -> same summary dict as
+run_checklist. Unit test: build a ledger with a blocked task + done tasks via
+mocks, resume, assert blocked task re-executes and run completes.
+
+## 8. Local Web Console (serve.py + foreman/webui/)
+
+The product face: double-click, watch the foreman work. STDLIB ONLY
+(http.server.ThreadingHTTPServer) — no flask/fastapi; the .bat experience must
+not depend on anything beyond requirements.txt.
+
+serve.py at repo root:
+- `python serve.py [--port 8787]` starts the server and opens the browser
+  (webbrowser.open) at http://127.0.0.1:8787.
+- Serves foreman/webui/index.html at "/" (single file: inline CSS/JS, no CDN).
+- JSON API (all under /api/, read ledger.db + events.jsonl fresh per request —
+  WAL mode allows concurrent reads while a run writes):
+  GET  /api/runs                    -> [{run_id, created_at, counts, complete}]
+  GET  /api/runs/<id>               -> {tasks: [...], counts, complete}
+  GET  /api/runs/<id>/events?after=<n> -> {events: [...], next: <n+len>}
+  GET  /api/runs/<id>/task/<tid>    -> task row + attempt history (verdict text)
+  POST /api/runs {"requirements": "..."} -> {run_id} ; starts
+       Orchestrator().run_checklist in a daemon thread. Live Qwen — requires
+       .env; return HTTP 409 with a clear error if DASHSCOPE_API_KEY missing.
+- UI (English, single dark-on-light page, no external fonts/CDN):
+  left = textarea for the checklist + Start button + run picker;
+  right = four-color status wall (green done / red blocked / amber
+  in_progress|pending_review|disputing / grey pending|ready), one cell per
+  task, click cell -> drawer with title, criteria, attempts, verdict reasons,
+  actionable feedback timeline; bottom = live event feed (poll every 2s) with
+  timestamps + elapsed clock + attempt counter. Show "DISPUTE" and
+  "ARBITRATION" events prominently (amber badge) — negotiation must be VISIBLE.
+- start_foreman.bat at repo root: @echo off; cd /d %~dp0; python -m pip install
+  -r requirements.txt -q; python serve.py. Plus a first-run check that .env
+  exists with a friendly message if not.
+
+Tests: light — one test that the API layer's ledger-reading functions return
+sane JSON shapes against a ledger fixture (no HTTP server needed; factor the
+data-access functions so they're importable and testable without sockets).
