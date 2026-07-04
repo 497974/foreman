@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Optional
 
 from .arbiter import Arbiter, solicit_dispute
+from .backends import make_executor
 from .config import Settings, make_client
 from .dispatcher import Dispatcher
-from .executor import Executor
 from .ledger import Ledger
 from .models import AttemptOutcome, Handoff, Task, TaskStatus
 from .planner import Planner
@@ -118,7 +118,7 @@ class Orchestrator:
         self.dispatcher = Dispatcher(self.ledger)
 
         self.planner = Planner(self.client, settings.planner_model)
-        self.executor = Executor(self.client, settings.executor_model, self.workspace)
+        self.executor = make_executor(settings, self.workspace, self.client)
         self.verifier = Verifier(self.client, settings.verifier_model, self.workspace)
         # Arbiter uses the planner-tier model (qwen-max) on purpose: it is
         # meant to out-rank both the executor that disputes and the verifier

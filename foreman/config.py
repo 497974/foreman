@@ -38,6 +38,9 @@ class Settings:
     planner_model: str
     executor_model: str
     verifier_model: str
+    # Which executor writes the code: "native" (hand-written tool loop, default)
+    # or "qwen-code" (delegate to Alibaba's qwen-code CLI). See foreman/backends.py.
+    executor_backend: str = "native"
 
     @classmethod
     def from_env(cls, env_path: str | os.PathLike = ".env") -> "Settings":
@@ -58,6 +61,7 @@ class Settings:
             planner_model=os.environ.get("FOREMAN_PLANNER_MODEL", "qwen-max"),
             executor_model=os.environ.get("FOREMAN_EXECUTOR_MODEL", "qwen3-coder-plus"),
             verifier_model=os.environ.get("FOREMAN_VERIFIER_MODEL", "qwen-plus"),
+            executor_backend=os.environ.get("FOREMAN_EXECUTOR_BACKEND", "native"),
         )
 
 
