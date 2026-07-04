@@ -27,6 +27,7 @@ from .executor import Executor
 from .ledger import Ledger
 from .models import AttemptOutcome, Handoff, Task, TaskStatus
 from .planner import Planner
+from .telemetry import set_current_run
 from .verifier import Verifier
 from .workspace import Workspace
 
@@ -226,12 +227,23 @@ class Orchestrator:
     # ---- the loop ---------------------------------------------------------
 
     def run_checklist(self, requirements: str) -> dict:
-        tasks = self.planner.plan(requirements)
-        self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
+        """Tag this worker thread with the run_id for the whole call (contract
+        §9.1): every chat_json/executor METER.record() call made on this
+        thread while planning + driving the loop gets attributed to this run,
+        so the console can show a live per-run cost readout. Cleared in a
+        finally so a thread pool reusing this thread never leaks the tag into
+        unrelated work.
+        """
+        set_current_run(self.run_id)
+        try:
+            tasks = self.planner.plan(requirements)
+            self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
 
-        return self.run_tasks(requirements, tasks)
+            return self.run_tasks(requirements, tasks, _tag_thread=False)
+        finally:
+            set_current_run(None)
 
-    def run_tasks(self, requirements: str, tasks: list[Task]) -> dict:
+    def run_tasks(self, requirements: str, tasks: list[Task], _tag_thread: bool = True) -> dict:
         """Queue an already-planned task list and drive it, skipping the planner.
 
         Identical tail to ``run_checklist`` — the only difference is where the
@@ -248,10 +260,23 @@ class Orchestrator:
         `runs` table id does not have to match self.run_id used for the
         filesystem layout; only the run_dir naming needs to be decided before
         the ledger exists).
+
+        ``_tag_thread`` is internal: when called directly (Condition C of the
+        eval harness, or any caller with an already-planned list) this method
+        owns the thread-local run tag itself (contract §9.1); when called
+        from ``run_checklist`` the tag is already set by the caller, so it is
+        left alone here to avoid clearing it prematurely inside a shared
+        try/finally.
         """
-        self.ledger.create_run(requirements)
-        self.ledger.add_tasks(tasks)
-        return self._drive_loop()
+        if _tag_thread:
+            set_current_run(self.run_id)
+        try:
+            self.ledger.create_run(requirements)
+            self.ledger.add_tasks(tasks)
+            return self._drive_loop()
+        finally:
+            if _tag_thread:
+                set_current_run(None)
 
     def resume_run(self, run_id: str) -> dict:
         """Continue an existing run without re-planning (contract §7).
@@ -267,13 +292,25 @@ class Orchestrator:
         existing run's directory (the caller — main.py's --resume — must
         construct the Orchestrator against that run_id's ledger/workspace
         before calling this; see main.py for the wiring).
-        """
-        blocked = self.ledger.tasks_by_status(TaskStatus.BLOCKED)
-        for task in blocked:
-            self.ledger.revive_blocked(task.task_id, reset_attempts=True)
-            self._emit("revive", task_id=task.task_id, detail={"run_id": run_id})
 
-        return self._drive_loop()
+        Deletes the STOP sentinel (contract §9.3) if present before entering
+        the loop — a resumed run should not immediately observe a stale stop
+        request left over from whichever earlier process wrote it.
+        """
+        set_current_run(self.run_id)
+        try:
+            stop_path = self.run_dir / "STOP"
+            if stop_path.exists():
+                stop_path.unlink()
+
+            blocked = self.ledger.tasks_by_status(TaskStatus.BLOCKED)
+            for task in blocked:
+                self.ledger.revive_blocked(task.task_id, reset_attempts=True)
+                self._emit("revive", task_id=task.task_id, detail={"run_id": run_id})
+
+            return self._drive_loop()
+        finally:
+            set_current_run(None)
 
     def _drive_loop(self) -> dict:
         """The claim -> execute -> submit -> verify -> (dispute) -> record
@@ -281,6 +318,16 @@ class Orchestrator:
         is aware of whether tasks were just planned or already existed in the
         ledger from a prior process — that is the entire point of routing
         every decision through the ledger rather than in-memory state.
+
+        Stop sentinel (contract §9.3): a file at ``runs/<run_id>/STOP`` is
+        checked at the TOP of every iteration, before claiming the next task.
+        This gives task-boundary granularity, not instant interruption — an
+        in-flight executor attempt (already claimed before the sentinel
+        appeared) always finishes its current claim -> execute -> verify ->
+        record cycle first; the loop only stops before starting the NEXT one.
+        When the sentinel is found, a "stopped" event is emitted and the
+        summary carries ``"stopped": True`` so callers (the console) can
+        distinguish a deliberate stop from natural completion/stall.
         """
         import time
 
@@ -288,8 +335,15 @@ class Orchestrator:
 
         claims = 0
         worker_id = "orchestrator-worker-1"
+        stop_path = self.run_dir / "STOP"
+        stopped = False
 
         while True:
+            if stop_path.exists():
+                stopped = True
+                self._emit("stopped", detail={"claims": claims})
+                break
+
             tick = self.dispatcher.tick()
 
             if tick.reclaimed:
@@ -360,4 +414,5 @@ class Orchestrator:
             "claims": claims,
             "elapsed_s": elapsed,
             "complete": self.ledger.is_run_complete(),
+            "stopped": stopped,
         }

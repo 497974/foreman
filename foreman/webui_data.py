@@ -19,13 +19,61 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .models import Task, TaskStatus
+from .pricing import estimate_usd
+from .telemetry import METER
 
 # Statuses that count as "the run is still going" for the `complete` flag
 # mirrors Ledger.is_run_complete's own terminal set.
 _TERMINAL_STATUSES = {TaskStatus.DONE.value, TaskStatus.ARCHIVED.value, TaskStatus.BLOCKED.value}
+
+# Archived runs (contract §9.6 DELETE /api/runs/<id>) live under this
+# subdirectory of run_root; list_runs must never surface them.
+ARCHIVED_DIRNAME = "_archived"
+
+
+def _read_config(run_dir: Path) -> Optional[dict]:
+    """Read runs/<id>/config.json (contract §9.4), or None if absent/corrupt.
+
+    Written by serve.py at run start and merged with usage_final/est_usd when
+    the run finishes/stops (see serve.py's worker wrapper). A run started via
+    the CLI (main.py, no serve.py involved) simply has no config.json — that
+    is a normal, expected case, not an error.
+    """
+    config_path = run_dir / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _usage_and_cost(run_id: str, run_dir: Path, config: Optional[dict]) -> tuple[dict, Optional[float]]:
+    """Live METER usage if the run has recorded anything under this run_id,
+    otherwise fall back to the persisted "usage_final" in config.json
+    (contract §9.4/§9.6: ``usage`` = live totals if nonzero else usage_final).
+    Returns (usage_dict, est_usd) — est_usd is None when there is no usage at
+    all yet (fresh run, nothing recorded).
+    """
+    live = METER.run_totals(run_id)
+    if live["totals"]["calls"] > 0:
+        usage = live
+    elif config and config.get("usage_final"):
+        usage = config["usage_final"]
+    else:
+        usage = {"per_model": {}, "totals": {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}}
+
+    per_model = usage.get("per_model", {})
+    if per_model:
+        est_usd = estimate_usd(per_model)
+    elif config and config.get("est_usd") is not None:
+        est_usd = config["est_usd"]
+    else:
+        est_usd = None
+    return usage, est_usd
 
 
 def _ledger_connect(ledger_db_path: Path) -> sqlite3.Connection:
@@ -53,20 +101,31 @@ def _is_complete(rows: list[sqlite3.Row]) -> bool:
     return all(r["status"] in _TERMINAL_STATUSES for r in rows)
 
 
-def list_runs(run_root: str | Path) -> list[dict]:
+def list_runs(run_root: str | Path, is_active: Optional[Callable[[str], bool]] = None) -> list[dict]:
     """One summary row per run directory under ``run_root``, newest first.
 
     Directories without a ledger.db yet (a run whose Orchestrator is still
     inside __init__) are skipped rather than erroring — the UI's run picker
-    should only list runs it can actually show data for.
+    should only list runs it can actually show data for. Archived runs
+    (``_archived/<id>``, see the DELETE endpoint) are never surfaced here —
+    that whole subdirectory is skipped like any other non-run directory.
+
+    ``is_active`` is an optional callable (run_id -> bool) supplied by
+    serve.py's ``_active_runs`` registry (contract §9.6: "active": thread
+    alive). Kept optional / defaulting to "always False" so this module stays
+    importable and testable with zero knowledge of serve.py's threading.
     """
     root = Path(run_root)
     if not root.exists():
         return []
 
+    active_check = is_active or (lambda _run_id: False)
+
     out: list[dict] = []
     for run_dir in root.iterdir():
         if not run_dir.is_dir():
+            continue
+        if run_dir.name == ARCHIVED_DIRNAME:
             continue
         db_path = run_dir / "ledger.db"
         if not db_path.exists():
@@ -85,6 +144,8 @@ def list_runs(run_root: str | Path) -> list[dict]:
             continue
 
         counts = _counts_from_rows(task_rows)
+        config = _read_config(run_dir)
+        _usage, est_usd = _usage_and_cost(run_dir.name, run_dir, config)
         out.append(
             {
                 "run_id": run_dir.name,
@@ -93,6 +154,9 @@ def list_runs(run_root: str | Path) -> list[dict]:
                 "counts": counts,
                 "total_tasks": len(task_rows),
                 "complete": _is_complete(task_rows),
+                "active": bool(active_check(run_dir.name)),
+                "mock": bool(config.get("mock")) if config else False,
+                "est_usd": est_usd,
             }
         )
 
@@ -122,9 +186,19 @@ def _task_row_to_dict(row: sqlite3.Row) -> dict:
     }
 
 
-def get_run_detail(run_root: str | Path, run_id: str) -> Optional[dict]:
-    """Full task list + counts for one run, or None if the run does not exist."""
-    db_path = Path(run_root) / run_id / "ledger.db"
+def get_run_detail(
+    run_root: str | Path, run_id: str, is_active: Optional[Callable[[str], bool]] = None
+) -> Optional[dict]:
+    """Full task list + counts for one run, or None if the run does not exist.
+
+    Adds (contract §9.4): ``config`` (the parsed runs/<id>/config.json, or
+    None if the run has none — e.g. a CLI-only run), ``usage`` (live
+    METER.run_totals if the run has recorded anything under this run_id this
+    process's lifetime, else the persisted usage_final), and ``est_usd``
+    (estimated from whichever usage source was used).
+    """
+    run_dir = Path(run_root) / run_id
+    db_path = run_dir / "ledger.db"
     if not db_path.exists():
         return None
 
@@ -139,6 +213,11 @@ def get_run_detail(run_root: str | Path, run_id: str) -> Optional[dict]:
 
     tasks = [_task_row_to_dict(r) for r in task_rows]
     counts = _counts_from_rows(task_rows)
+    config = _read_config(run_dir)
+    usage, est_usd = _usage_and_cost(run_id, run_dir, config)
+
+    active_check = is_active or (lambda _run_id: False)
+
     return {
         "run_id": run_id,
         "requirements": run_row["requirements"] if run_row else "",
@@ -147,6 +226,10 @@ def get_run_detail(run_root: str | Path, run_id: str) -> Optional[dict]:
         "counts": counts,
         "total_tasks": len(tasks),
         "complete": _is_complete(task_rows),
+        "active": bool(active_check(run_id)),
+        "config": config,
+        "usage": usage,
+        "est_usd": est_usd,
     }
 
 
