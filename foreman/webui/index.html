@@ -44,14 +44,16 @@
 
   .tabular { font-variant-numeric: tabular-nums; font-family: Consolas, "Courier New", monospace; }
 
-  /* ---------- header ---------- */
+  button { font-family: inherit; }
+
+  /* ---------- top header ---------- */
   header {
     background: var(--steel);
     color: #fff;
     padding: 10px 20px;
     display: flex;
     align-items: center;
-    gap: 20px;
+    gap: 14px;
     border-bottom: 3px solid var(--orange);
     flex-shrink: 0;
   }
@@ -72,16 +74,36 @@
     transform: rotate(45deg);
   }
 
-  header select {
-    background: var(--steel-dark);
-    color: #fff;
-    border: 1px solid var(--steel-light);
-    border-radius: 4px;
-    padding: 6px 10px;
+  header .spacer { flex: 1; }
+
+  header .run-id-tag {
+    font-family: Consolas, monospace;
     font-size: 13px;
+    background: rgba(0,0,0,0.18);
+    padding: 4px 10px;
+    border-radius: 4px;
   }
 
-  header .spacer { flex: 1; }
+  header .chip {
+    font-size: 11px;
+    background: rgba(255,255,255,0.14);
+    padding: 3px 9px;
+    border-radius: 10px;
+    white-space: nowrap;
+  }
+  header .chip.mock {
+    background: var(--orange);
+    font-weight: 700;
+  }
+
+  header .cost-tick {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 10px;
+    background: rgba(0,0,0,0.18);
+    border-radius: 4px;
+    white-space: nowrap;
+  }
 
   header .clock {
     font-size: 20px;
@@ -104,6 +126,24 @@
   }
   header .run-complete-badge.show { display: inline-block; }
 
+  .hdr-btn {
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  .hdr-btn:hover { background: rgba(255,255,255,0.22); }
+  .hdr-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .hdr-btn.danger { border-color: var(--c-blocked); background: rgba(192,57,43,0.35); }
+  .hdr-btn.danger:hover { background: rgba(192,57,43,0.55); }
+  .hdr-btn.primary { background: var(--orange); border-color: var(--orange); }
+  .hdr-btn.primary:hover { background: #c26308; }
+
   /* ---------- layout ---------- */
   .layout {
     flex: 1;
@@ -114,12 +154,14 @@
   .left-panel {
     width: 320px;
     flex-shrink: 0;
+    max-width: 38%;
     background: var(--panel);
     border-right: 1px solid var(--line);
-    padding: 16px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    overflow-y: auto;
   }
 
   .left-panel h2 {
@@ -127,30 +169,70 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--ink-soft);
-    margin: 4px 0 0 0;
+    margin: 6px 0 0 0;
+  }
+
+  .field-label {
+    font-size: 11px;
+    color: var(--ink-soft);
+    margin: 6px 0 2px 0;
+  }
+
+  .left-panel select,
+  .left-panel input[type=text] {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12.5px;
+    background: #fff;
+    color: var(--ink);
   }
 
   .left-panel textarea {
-    flex: 1;
-    min-height: 220px;
+    min-height: 130px;
     resize: vertical;
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 10px;
+    padding: 8px;
     font-family: Consolas, "Courier New", monospace;
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 12.5px;
+    line-height: 1.45;
+    width: 100%;
   }
 
-  .left-panel textarea:focus { outline: 2px solid var(--steel-light); }
+  .left-panel textarea:focus,
+  .left-panel select:focus { outline: 2px solid var(--steel-light); }
+
+  .model-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--ink);
+    padding: 4px 0;
+  }
+  .checkbox-row .hint {
+    color: var(--ink-soft);
+    font-size: 10.5px;
+    display: block;
+    margin-left: 22px;
+  }
 
   button.start-btn {
     background: var(--orange);
     color: #fff;
     border: none;
     border-radius: 4px;
-    padding: 12px;
-    font-size: 15px;
+    padding: 11px;
+    font-size: 14.5px;
     font-weight: 700;
     cursor: pointer;
     letter-spacing: 0.02em;
@@ -164,6 +246,64 @@
     min-height: 16px;
   }
   .status-line.error { color: var(--c-blocked); font-weight: 600; }
+
+  hr.sep { border: none; border-top: 1px solid var(--line); margin: 6px 0; }
+
+  /* ---------- runs list ---------- */
+  .runs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+  }
+  .run-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    font-size: 12px;
+  }
+  .run-row:hover { background: var(--bg); }
+  .run-row.selected { background: var(--c-grey-bg); border-color: var(--steel-light); }
+  .run-row .dot {
+    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  }
+  .run-row .rid {
+    font-family: Consolas, monospace;
+    font-weight: 700;
+    color: var(--steel);
+    flex-shrink: 0;
+    max-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .run-row .rtime {
+    color: var(--ink-soft);
+    flex-shrink: 0;
+  }
+  .run-row .rcost {
+    color: var(--ink-soft);
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .run-row .mock-chip {
+    background: var(--orange);
+    color: #fff;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .runs-empty-hint {
+    color: var(--ink-soft);
+    font-size: 12px;
+    padding: 10px 4px;
+  }
 
   .legend {
     display: flex;
@@ -184,14 +324,92 @@
   /* ---------- main: status wall ---------- */
   .main-panel {
     flex: 1;
+    min-width: 62%;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
 
+  .run-header {
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .run-header .rh-id {
+    font-family: Consolas, monospace;
+    font-weight: 700;
+    color: var(--steel);
+    font-size: 13px;
+  }
+  .run-header .rh-chip {
+    font-size: 10.5px;
+    background: var(--c-grey-bg);
+    color: var(--ink-soft);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .run-header .rh-chip.mock { background: var(--orange); color: #fff; font-weight: 700; }
+  .run-header .rh-cost {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--steel);
+  }
+  .run-header .rh-clock {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink);
+    background: var(--bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .run-header .rh-spacer { flex: 1; }
+  .run-header .rh-btn {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 4px;
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .run-header .rh-btn:hover { background: var(--bg); }
+  .run-header .rh-btn.stop { color: var(--c-blocked); border-color: var(--c-blocked); }
+  .run-header .rh-btn.resume { color: var(--c-done); border-color: var(--c-done); }
+  .run-header .rh-btn.archive:hover { background: var(--c-blocked-bg); }
+
+  /* ---------- error banner ---------- */
+  .error-banner {
+    display: none;
+    background: var(--c-blocked-bg);
+    color: #7a2318;
+    border-bottom: 2px solid var(--c-blocked);
+    padding: 8px 20px;
+    font-size: 12.5px;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .error-banner.show { display: flex; }
+  .error-banner .eb-text { flex: 1; }
+  .error-banner .eb-close {
+    background: none;
+    border: none;
+    color: #7a2318;
+    font-size: 16px;
+    cursor: pointer;
+    font-weight: 700;
+    line-height: 1;
+  }
+
   .wall-header {
-    padding: 14px 20px 6px 20px;
+    padding: 12px 20px 6px 20px;
     display: flex;
     align-items: baseline;
     gap: 14px;
@@ -222,7 +440,7 @@
   }
 
   .wall.empty::after {
-    content: "No run selected. Paste a checklist on the left and press Start.";
+    content: "No run selected. Configure a run on the left and press Start.";
     grid-column: 1 / -1;
     color: var(--ink-soft);
     font-size: 13px;
@@ -279,7 +497,7 @@
   /* ---------- event feed ---------- */
   .feed-panel {
     flex-shrink: 0;
-    height: 220px;
+    height: 200px;
     border-top: 2px solid var(--line);
     background: var(--panel);
     display: flex;
@@ -330,6 +548,8 @@
   .feed-row.type-verdict.fail .type { color: var(--c-blocked); }
   .feed-row.type-claim .type { color: var(--ink-soft); }
   .feed-row.type-plan .type { color: var(--steel); }
+  .feed-row.type-error .type { color: var(--c-blocked); }
+  .feed-row.type-stopped .type { color: var(--c-blocked); }
 
   .badge-negotiation {
     background: var(--orange);
@@ -372,6 +592,7 @@
     color: #fff;
     padding: 16px 18px;
     flex-shrink: 0;
+    position: relative;
   }
   .drawer-header .tid { font-family: Consolas, monospace; font-size: 12px; opacity: 0.85; }
   .drawer-header .title { font-size: 16px; font-weight: 700; margin-top: 4px; }
@@ -400,6 +621,13 @@
     margin: 18px 0 8px 0;
   }
   .drawer-body h3:first-child { margin-top: 0; }
+  .drawer-body h4 {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--steel);
+    margin: 8px 0 3px 0;
+  }
 
   .drawer-body .status-pill {
     display: inline-block;
@@ -415,6 +643,7 @@
   .status-pill.status-pending, .status-pill.status-ready { background: var(--c-grey-bg); color: #5a6067; }
 
   .drawer-body ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+  .drawer-body ul.small { font-size: 12px; line-height: 1.5; }
   .drawer-body p.desc { font-size: 13px; line-height: 1.5; color: var(--ink); }
 
   .attempt-card {
@@ -450,18 +679,50 @@
 
 <header>
   <div class="brand"><span class="mark"></span> FOREMAN</div>
-  <select id="run-picker"><option value="">— select a run —</option></select>
-  <div class="spacer"></div>
   <div class="run-complete-badge" id="complete-badge">All Green</div>
+  <div class="spacer"></div>
   <div class="clock tabular" id="clock">00:00</div>
 </header>
 
 <div class="layout">
   <div class="left-panel">
-    <h2>Requirements Checklist</h2>
+    <h2>New Run</h2>
+    <div class="field-label">Template</div>
+    <select id="template-select"><option value="">— blank —</option></select>
+
+    <div class="field-label">Requirements checklist</div>
     <textarea id="checklist" placeholder="1. Build a Flask health-check endpoint.&#10;2. Add a SQLite model...&#10;3. ..."></textarea>
+
+    <div class="model-row">
+      <div class="field-label">Planner model</div>
+      <select id="model-planner"></select>
+      <input type="text" id="model-planner-custom" placeholder="custom model id" style="display:none;">
+    </div>
+    <div class="model-row">
+      <div class="field-label">Executor model</div>
+      <select id="model-executor"></select>
+      <input type="text" id="model-executor-custom" placeholder="custom model id" style="display:none;">
+    </div>
+    <div class="model-row">
+      <div class="field-label">Verifier model</div>
+      <select id="model-verifier"></select>
+      <input type="text" id="model-verifier-custom" placeholder="custom model id" style="display:none;">
+    </div>
+
+    <label class="checkbox-row">
+      <input type="checkbox" id="demo-mode-cb">
+      Demo mode — runs without an API key
+    </label>
+    <div class="hint" id="demo-mode-hint" style="display:none;"></div>
+
     <button class="start-btn" id="start-btn">Start Foreman</button>
     <div class="status-line" id="status-line"></div>
+
+    <hr class="sep">
+    <h2>Runs</h2>
+    <div class="runs-list" id="runs-list"></div>
+
+    <hr class="sep">
     <h2>Legend</h2>
     <div class="legend">
       <span class="sw"><span class="dot" style="background:var(--c-done)"></span>Done</span>
@@ -472,6 +733,26 @@
   </div>
 
   <div class="main-panel">
+    <div class="run-header" id="run-header" style="display:none;">
+      <span class="rh-id" id="rh-id"></span>
+      <span class="rh-chip" id="rh-chip-planner"></span>
+      <span class="rh-chip" id="rh-chip-executor"></span>
+      <span class="rh-chip" id="rh-chip-verifier"></span>
+      <span class="rh-chip mock" id="rh-chip-mock" style="display:none;">MOCK</span>
+      <span class="rh-cost tabular" id="rh-cost"></span>
+      <span class="rh-clock tabular" id="rh-clock">00:00</span>
+      <div class="rh-spacer"></div>
+      <button class="rh-btn stop" id="btn-stop">Stop</button>
+      <button class="rh-btn resume" id="btn-resume">Resume</button>
+      <button class="rh-btn" id="btn-download">Download</button>
+      <button class="rh-btn archive" id="btn-archive">Archive</button>
+    </div>
+
+    <div class="error-banner" id="error-banner">
+      <span class="eb-text" id="error-banner-text"></span>
+      <button class="eb-close" id="error-banner-close">&times;</button>
+    </div>
+
     <div class="wall-header">
       <h1>Status Wall</h1>
       <span class="counts" id="wall-counts"></span>
@@ -499,23 +780,59 @@
 (function () {
   "use strict";
 
+  var KNOWN_MODELS_FALLBACK = ["qwen-max", "qwen-plus", "qwen3-coder-plus", "qwen-turbo", "qwen-flash"];
+  var DEFAULTS_FALLBACK = { planner: "qwen-max", executor: "qwen3-coder-plus", verifier: "qwen-plus" };
+
   var state = {
     runId: null,
     runStartedAt: null,
     eventsAfter: 0,
-    pollTimer: null,
+    detailPollTimer: null,
+    runsPollTimer: null,
     clockTimer: null,
     selectedTaskId: null,
     tasksById: {},
+    runsCache: [],
+    keyPresent: true,
+    lastDetail: null,
   };
 
   var el = {
-    runPicker: document.getElementById("run-picker"),
     clock: document.getElementById("clock"),
     completeBadge: document.getElementById("complete-badge"),
+
+    templateSelect: document.getElementById("template-select"),
     checklist: document.getElementById("checklist"),
+    modelPlanner: document.getElementById("model-planner"),
+    modelPlannerCustom: document.getElementById("model-planner-custom"),
+    modelExecutor: document.getElementById("model-executor"),
+    modelExecutorCustom: document.getElementById("model-executor-custom"),
+    modelVerifier: document.getElementById("model-verifier"),
+    modelVerifierCustom: document.getElementById("model-verifier-custom"),
+    demoModeCb: document.getElementById("demo-mode-cb"),
+    demoModeHint: document.getElementById("demo-mode-hint"),
     startBtn: document.getElementById("start-btn"),
     statusLine: document.getElementById("status-line"),
+
+    runsList: document.getElementById("runs-list"),
+
+    runHeader: document.getElementById("run-header"),
+    rhId: document.getElementById("rh-id"),
+    rhChipPlanner: document.getElementById("rh-chip-planner"),
+    rhChipExecutor: document.getElementById("rh-chip-executor"),
+    rhChipVerifier: document.getElementById("rh-chip-verifier"),
+    rhChipMock: document.getElementById("rh-chip-mock"),
+    rhCost: document.getElementById("rh-cost"),
+    rhClock: document.getElementById("rh-clock"),
+    btnStop: document.getElementById("btn-stop"),
+    btnResume: document.getElementById("btn-resume"),
+    btnDownload: document.getElementById("btn-download"),
+    btnArchive: document.getElementById("btn-archive"),
+
+    errorBanner: document.getElementById("error-banner"),
+    errorBannerText: document.getElementById("error-banner-text"),
+    errorBannerClose: document.getElementById("error-banner-close"),
+
     wall: document.getElementById("wall"),
     wallCounts: document.getElementById("wall-counts"),
     feedList: document.getElementById("feed-list"),
@@ -542,6 +859,23 @@
     return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
   }
 
+  function fmtHHMM(ts) {
+    if (!ts) return "--:--";
+    var d = new Date(ts * 1000);
+    var pad = function (n) { return (n < 10 ? "0" : "") + n; };
+    return pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+
+  function fmtUsd(n) {
+    if (n === null || n === undefined || isNaN(n)) return null;
+    return "$" + Number(n).toFixed(4);
+  }
+
+  function fmtTokens(n) {
+    if (n === null || n === undefined || isNaN(n)) return "0";
+    return Number(n).toLocaleString();
+  }
+
   function escapeHtml(s) {
     if (s === null || s === undefined) return "";
     return String(s)
@@ -551,90 +885,220 @@
 
   function api(path, opts) {
     return fetch(path, opts).then(function (r) {
-      return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+      return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; })
+        .catch(function () { return { ok: r.ok, status: r.status, body: {} }; });
     });
   }
 
-  // ---------------- run picker ----------------
+  // ---------------- config: templates, models, key ----------------
 
-  function refreshRunPicker(selectAfter) {
-    api("/api/runs").then(function (res) {
-      if (!res.ok) return;
-      var runs = res.body;
-      var current = el.runPicker.value;
-      el.runPicker.innerHTML = '<option value="">— select a run —</option>';
-      runs.forEach(function (r) {
-        var opt = document.createElement("option");
-        opt.value = r.run_id;
-        var label = r.run_id + "  (" + r.counts.done + "/" + r.total_tasks + " done" +
-          (r.complete ? ", complete" : "") + ")";
-        opt.textContent = label;
-        el.runPicker.appendChild(opt);
-      });
-      var target = selectAfter || current;
-      if (target && runs.some(function (r) { return r.run_id === target; })) {
-        el.runPicker.value = target;
+  function loadConfig() {
+    api("/api/config").then(function (res) {
+      var cfg = (res.ok && res.body) ? res.body : {};
+      state.keyPresent = cfg.key_present !== false; // default true unless explicitly false
+      var models = (cfg.models_known && cfg.models_known.length) ? cfg.models_known : KNOWN_MODELS_FALLBACK;
+      var defaults = cfg.defaults || DEFAULTS_FALLBACK;
+      populateModelSelect(el.modelPlanner, models, defaults.planner || DEFAULTS_FALLBACK.planner);
+      populateModelSelect(el.modelExecutor, models, defaults.executor || DEFAULTS_FALLBACK.executor);
+      populateModelSelect(el.modelVerifier, models, defaults.verifier || DEFAULTS_FALLBACK.verifier);
+
+      if (!state.keyPresent) {
+        el.demoModeCb.checked = true;
+        el.demoModeCb.disabled = true;
+        el.demoModeHint.style.display = "block";
+        el.demoModeHint.textContent = "No API key configured — demo mode is locked on. Add DASHSCOPE_API_KEY in .env to run live.";
+      } else {
+        el.demoModeCb.disabled = false;
+        el.demoModeHint.style.display = "none";
       }
+    }).catch(function () {
+      populateModelSelect(el.modelPlanner, KNOWN_MODELS_FALLBACK, DEFAULTS_FALLBACK.planner);
+      populateModelSelect(el.modelExecutor, KNOWN_MODELS_FALLBACK, DEFAULTS_FALLBACK.executor);
+      populateModelSelect(el.modelVerifier, KNOWN_MODELS_FALLBACK, DEFAULTS_FALLBACK.verifier);
     });
+
+    api("/api/templates").then(function (res) {
+      if (!res.ok || !res.body) return;
+      var list = res.body || [];
+      el.templateSelect.innerHTML = '<option value="">— blank —</option>';
+      list.forEach(function (t) {
+        var opt = document.createElement("option");
+        opt.value = t.name;
+        opt.textContent = t.name;
+        opt.setAttribute("data-content", t.content || "");
+        el.templateSelect.appendChild(opt);
+      });
+    }).catch(function () {});
   }
 
-  el.runPicker.addEventListener("change", function () {
-    var id = el.runPicker.value;
-    if (id) selectRun(id);
-    else clearRun();
+  function populateModelSelect(selectEl, models, defaultModel) {
+    selectEl.innerHTML = "";
+    models.forEach(function (m) {
+      var opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      selectEl.appendChild(opt);
+    });
+    var customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "custom…";
+    selectEl.appendChild(customOpt);
+    if (defaultModel && models.indexOf(defaultModel) !== -1) {
+      selectEl.value = defaultModel;
+    }
+  }
+
+  function wireCustomToggle(selectEl, inputEl) {
+    selectEl.addEventListener("change", function () {
+      inputEl.style.display = selectEl.value === "__custom__" ? "block" : "none";
+    });
+  }
+  wireCustomToggle(el.modelPlanner, el.modelPlannerCustom);
+  wireCustomToggle(el.modelExecutor, el.modelExecutorCustom);
+  wireCustomToggle(el.modelVerifier, el.modelVerifierCustom);
+
+  function resolveModelValue(selectEl, inputEl) {
+    if (selectEl.value === "__custom__") {
+      return (inputEl.value || "").trim();
+    }
+    return selectEl.value;
+  }
+
+  el.templateSelect.addEventListener("change", function () {
+    var opt = el.templateSelect.options[el.templateSelect.selectedIndex];
+    if (opt && opt.getAttribute("data-content")) {
+      el.checklist.value = opt.getAttribute("data-content");
+    }
   });
 
-  function clearRun() {
-    stopPolling();
-    state.runId = null;
-    state.runStartedAt = null;
-    el.wall.classList.add("empty");
-    el.wall.innerHTML = "";
-    el.wallCounts.textContent = "";
-    el.feedList.innerHTML = "";
-    el.completeBadge.classList.remove("show");
+  // ---------------- runs list (sidebar) ----------------
+
+  function statusDotColor(run) {
+    var c = run.counts || {};
+    if (run.complete && (c.blocked || 0) === 0) return "var(--c-done)";
+    if ((c.blocked || 0) > 0) return "var(--c-blocked)";
+    if (run.active) return "var(--c-amber)";
+    return "var(--c-grey)";
   }
 
+  function refreshRunsList() {
+    api("/api/runs").then(function (res) {
+      if (!res.ok) return;
+      var runs = res.body || [];
+      state.runsCache = runs;
+      renderRunsList(runs);
+    }).catch(function () {});
+  }
+
+  function renderRunsList(runs) {
+    if (!runs.length) {
+      el.runsList.innerHTML = '<div class="runs-empty-hint">No runs yet. Configure a run above and press Start.</div>';
+      return;
+    }
+    el.runsList.innerHTML = runs.map(function (r) {
+      var sel = r.run_id === state.runId ? " selected" : "";
+      var cost = (r.est_usd !== null && r.est_usd !== undefined) ? fmtUsd(r.est_usd) : "";
+      var mockChip = r.mock ? '<span class="mock-chip">MOCK</span>' : "";
+      return (
+        '<div class="run-row' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '">' +
+          '<span class="dot" style="background:' + statusDotColor(r) + '"></span>' +
+          '<span class="rid">' + escapeHtml(r.run_id) + '</span>' +
+          '<span class="rtime tabular">' + fmtHHMM(r.created_at) + '</span>' +
+          mockChip +
+          '<span class="rcost tabular">' + escapeHtml(cost) + '</span>' +
+        '</div>'
+      );
+    }).join("");
+    Array.prototype.forEach.call(el.runsList.querySelectorAll(".run-row"), function (rowEl) {
+      rowEl.addEventListener("click", function () {
+        selectRun(rowEl.getAttribute("data-run-id"));
+      });
+    });
+  }
+
+  // ---------------- run selection / polling ----------------
+
   function selectRun(runId) {
-    stopPolling();
+    stopDetailPolling();
     state.runId = runId;
     state.eventsAfter = 0;
     state.runStartedAt = null;
+    state.lastDetail = null;
+    hideErrorBanner();
     el.feedList.innerHTML = "";
     el.wall.classList.remove("empty");
+    el.runHeader.style.display = "flex";
+    renderRunsList(state.runsCache);
     loadRunDetail();
     pollEvents();
-    state.pollTimer = setInterval(function () {
+    state.detailPollTimer = setInterval(function () {
       loadRunDetail();
       pollEvents();
     }, 2000);
   }
 
-  function stopPolling() {
-    if (state.pollTimer) {
-      clearInterval(state.pollTimer);
-      state.pollTimer = null;
+  function stopDetailPolling() {
+    if (state.detailPollTimer) {
+      clearInterval(state.detailPollTimer);
+      state.detailPollTimer = null;
     }
   }
 
-  // ---------------- status wall ----------------
+  // ---------------- status wall + run header ----------------
 
   function loadRunDetail() {
     if (!state.runId) return;
     api("/api/runs/" + encodeURIComponent(state.runId)).then(function (res) {
       if (!res.ok) return;
+      state.lastDetail = res.body;
       renderWall(res.body);
-    });
+      renderRunHeader(res.body);
+    }).catch(function () {});
+  }
+
+  function renderRunHeader(detail) {
+    detail = detail || {};
+    el.rhId.textContent = detail.run_id || state.runId || "";
+
+    var config = detail.config || null;
+    var models = (config && config.models) || {};
+    el.rhChipPlanner.textContent = "planner: " + (models.planner || "?");
+    el.rhChipExecutor.textContent = "executor: " + (models.executor || "?");
+    el.rhChipVerifier.textContent = "verifier: " + (models.verifier || "?");
+
+    var isMock = !!(config && config.mock);
+    el.rhChipMock.style.display = isMock ? "inline-block" : "none";
+
+    var usage = detail.usage || null;
+    var estUsd = (detail.est_usd !== undefined && detail.est_usd !== null) ? detail.est_usd
+      : (config && config.est_usd !== undefined ? config.est_usd : null);
+    var totalTok = 0;
+    if (usage && usage.totals) {
+      totalTok = (usage.totals.prompt_tokens || 0) + (usage.totals.completion_tokens || 0);
+    }
+    var costStr = (estUsd !== null && estUsd !== undefined) ? "≈" + fmtUsd(estUsd).replace("$", "$") : "≈$0.0000";
+    el.rhCost.textContent = costStr + " · " + fmtTokens(totalTok) + " tok";
+
+    var active = !!detail.active;
+    var complete = !!detail.complete;
+    var isMockRun = isMock;
+
+    el.btnStop.style.display = active ? "inline-block" : "none";
+    el.btnResume.style.display = (!active && !complete && !isMockRun) ? "inline-block" : "none";
+    el.btnDownload.style.display = "inline-block";
+    el.btnArchive.style.display = active ? "none" : "inline-block";
+
+    if (state.runStartedAt === null && detail.created_at) {
+      state.runStartedAt = detail.created_at;
+    }
+
+    // surface a friendly error, if any, was already handled via events; nothing else here.
   }
 
   function renderWall(detail) {
     var tasks = detail.tasks || [];
     state.tasksById = {};
     tasks.forEach(function (t) { state.tasksById[t.task_id] = t; });
-
-    if (state.runStartedAt === null && detail.created_at) {
-      state.runStartedAt = detail.created_at;
-    }
 
     el.completeBadge.classList.toggle("show", !!detail.complete);
 
@@ -654,11 +1118,12 @@
 
     el.wall.innerHTML = tasks.map(function (t) {
       var selected = t.task_id === state.selectedTaskId ? " selected" : "";
+      var status = t.status || "pending";
       return (
-        '<div class="cell status-' + t.status + selected + '" data-task-id="' + escapeHtml(t.task_id) + '" title="' + escapeHtml(t.title) + '">' +
+        '<div class="cell status-' + escapeHtml(status) + selected + '" data-task-id="' + escapeHtml(t.task_id) + '" title="' + escapeHtml(t.title || "") + '">' +
           '<div class="tid">' + escapeHtml(t.task_id) + '</div>' +
-          '<div class="title">' + escapeHtml(t.title) + '</div>' +
-          '<div class="meta">' + escapeHtml(t.status) + (t.attempt_count ? " &middot; attempt " + t.attempt_count : "") + '</div>' +
+          '<div class="title">' + escapeHtml(t.title || "(untitled)") + '</div>' +
+          '<div class="meta">' + escapeHtml(status) + (t.attempt_count ? " &middot; attempt " + t.attempt_count : "") + '</div>' +
         '</div>'
       );
     }).join("");
@@ -676,13 +1141,37 @@
     if (!state.runId) return;
     api("/api/runs/" + encodeURIComponent(state.runId) + "/events?after=" + state.eventsAfter).then(function (res) {
       if (!res.ok) return;
-      var body = res.body;
+      var body = res.body || {};
       if (body.events && body.events.length) {
         appendFeedEvents(body.events);
+        checkForErrorEvents(body.events);
       }
-      state.eventsAfter = body.next;
+      if (body.next !== undefined) state.eventsAfter = body.next;
+    }).catch(function () {});
+  }
+
+  function checkForErrorEvents(events) {
+    events.forEach(function (e) {
+      if (e.type === "error") {
+        var d = e.detail || {};
+        var msg = d.friendly || d.message || d.error || "An error occurred during the run.";
+        showErrorBanner(msg);
+      }
+      if (e.type === "stopped") {
+        showErrorBanner("Run stopped by user.");
+      }
     });
   }
+
+  function showErrorBanner(msg) {
+    el.errorBannerText.textContent = msg;
+    el.errorBanner.classList.add("show");
+  }
+  function hideErrorBanner() {
+    el.errorBanner.classList.remove("show");
+    el.errorBannerText.textContent = "";
+  }
+  el.errorBannerClose.addEventListener("click", hideErrorBanner);
 
   function appendFeedEvents(events) {
     var frag = document.createDocumentFragment();
@@ -693,13 +1182,13 @@
       if (e.type === "verdict" && e.detail) {
         passClass = e.detail.passed ? "pass" : "fail";
       }
-      row.className = "feed-row type-" + e.type + (passClass ? " " + passClass : "");
+      row.className = "feed-row type-" + escapeHtml(e.type || "unknown") + (passClass ? " " + passClass : "");
 
       var detailText = summarizeDetail(e);
       row.innerHTML =
         '<span class="ts tabular">' + fmtClockTime(e.ts) + '</span>' +
         '<span class="tid">' + escapeHtml(e.task_id || "") + '</span>' +
-        '<span class="type">' + (isNegotiation ? '<span class="badge-negotiation">' + e.type.toUpperCase() + '</span>' : escapeHtml(e.type)) + '</span>' +
+        '<span class="type">' + (isNegotiation ? '<span class="badge-negotiation">' + escapeHtml((e.type || "").toUpperCase()) + '</span>' : escapeHtml(e.type || "")) + '</span>' +
         '<span class="detail" title="' + escapeHtml(detailText) + '">' + escapeHtml(detailText) + '</span>';
       frag.appendChild(row);
     });
@@ -713,7 +1202,7 @@
       return (d.passed ? "PASS -> " : "REJECT -> ") + (d.new_status || "") + ": " + (d.reason || "");
     }
     if (e.type === "plan") {
-      return d.n_tasks + " tasks planned: " + (d.task_ids || []).join(", ");
+      return (d.n_tasks !== undefined ? d.n_tasks : "?") + " tasks planned: " + (d.task_ids || []).join(", ");
     }
     if (e.type === "claim") {
       return "attempt " + (d.attempt || "?");
@@ -722,12 +1211,22 @@
       return "outcome: " + (d.outcome || "");
     }
     if (e.type === "dispute") {
-      return d.rebuttal || JSON.stringify(d);
+      return d.rebuttal || safeJson(d);
     }
     if (e.type === "arbitration") {
       return (d.ruling || "") + ": " + (d.reasoning || "");
     }
-    return JSON.stringify(d);
+    if (e.type === "error") {
+      return d.friendly || d.message || d.error || safeJson(d);
+    }
+    if (e.type === "stopped") {
+      return "stop sentinel honored";
+    }
+    return safeJson(d);
+  }
+
+  function safeJson(d) {
+    try { return JSON.stringify(d); } catch (err) { return String(d); }
   }
 
   // ---------------- drawer ----------------
@@ -741,10 +1240,10 @@
 
     api("/api/runs/" + encodeURIComponent(state.runId) + "/task/" + encodeURIComponent(taskId)).then(function (res) {
       if (!res.ok) return;
-      renderDrawer(res.body);
+      renderDrawer(res.body || {});
       el.drawer.classList.add("open");
       el.drawerOverlay.classList.add("open");
-    });
+    }).catch(function () {});
   }
 
   function closeDrawer() {
@@ -760,11 +1259,11 @@
   el.drawerOverlay.addEventListener("click", closeDrawer);
 
   function renderDrawer(task) {
-    el.drawerTid.textContent = task.task_id;
-    el.drawerTitle.textContent = task.title;
+    el.drawerTid.textContent = task.task_id || "";
+    el.drawerTitle.textContent = task.title || "";
 
     var html = "";
-    html += '<span class="status-pill status-' + task.status + '">' + escapeHtml(task.status) + '</span>';
+    html += '<span class="status-pill status-' + escapeHtml(task.status || "pending") + '">' + escapeHtml(task.status || "pending") + '</span>';
 
     html += '<h3>Description</h3><p class="desc">' + escapeHtml(task.description || "") + '</p>';
 
@@ -781,27 +1280,126 @@
 
     html += '<h3>Attempt History (' + (task.attempts ? task.attempts.length : 0) + ')</h3>';
     if (task.attempts && task.attempts.length) {
-      html += task.attempts.slice().reverse().map(function (a) {
-        var handoff = a.handoff || {};
-        var feedback = "";
-        if (handoff.gotchas && handoff.gotchas.length) {
-          feedback += "gotchas: " + handoff.gotchas.join("; ");
-        }
-        return (
-          '<div class="attempt-card">' +
-            '<div class="attempt-head"><span>Attempt ' + a.attempt_no + '</span>' +
-            '<span class="outcome-' + escapeHtml(a.outcome) + '">' + escapeHtml((a.outcome || "").replace(/_/g, " ")) + '</span></div>' +
-            (a.verdict ? '<div class="verdict-text">' + escapeHtml(a.verdict) + '</div>' : '') +
-            (feedback ? '<div class="verdict-text">' + escapeHtml(feedback) + '</div>' : '') +
-          '</div>'
-        );
-      }).join("");
+      html += task.attempts.slice().reverse().map(renderAttemptCard).join("");
     } else {
       html += '<p class="empty-hint">no attempts yet</p>';
     }
 
     el.drawerBody.innerHTML = html;
   }
+
+  function renderAttemptCard(a) {
+    var out = '<div class="attempt-card">' +
+      '<div class="attempt-head"><span>Attempt ' + escapeHtml(a.attempt_no) + '</span>' +
+      '<span class="outcome-' + escapeHtml(a.outcome || "") + '">' + escapeHtml((a.outcome || "").replace(/_/g, " ")) + '</span></div>';
+
+    if (a.verdict) {
+      out += '<div class="verdict-text">' + escapeHtml(a.verdict) + '</div>';
+    }
+
+    out += renderHandoffPretty(a.handoff);
+
+    out += '</div>';
+    return out;
+  }
+
+  function renderHandoffPretty(handoff) {
+    if (!handoff) return "";
+    var parsed = null;
+
+    // handoff may already be an object (webui_data.py parses summary JSON server-side),
+    // or it may be a raw string that needs parsing here. Handle both defensively.
+    if (typeof handoff === "object") {
+      parsed = handoff;
+    } else if (typeof handoff === "string") {
+      try {
+        parsed = JSON.parse(handoff);
+      } catch (err) {
+        parsed = null;
+      }
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+      if (typeof handoff === "string" && handoff.trim()) {
+        return '<div class="verdict-text">' + escapeHtml(handoff) + '</div>';
+      }
+      return "";
+    }
+
+    var out = "";
+    out += renderHandoffList(parsed.completed_work, "Completed work");
+    out += renderHandoffList(parsed.files_touched, "Files touched");
+    out += renderHandoffList(parsed.gotchas, "Gotchas");
+
+    // Fall back to raw text if none of the expected fields were present/usable.
+    if (!out) {
+      var raw = "";
+      try { raw = JSON.stringify(parsed); } catch (err) { raw = String(parsed); }
+      if (raw && raw !== "{}") {
+        out = '<div class="verdict-text">' + escapeHtml(raw) + '</div>';
+      }
+    }
+    return out;
+  }
+
+  function renderHandoffList(items, label) {
+    if (!items || !items.length) return "";
+    return '<h4>' + escapeHtml(label) + '</h4><ul class="small">' +
+      items.map(function (it) { return '<li>' + escapeHtml(it) + '</li>'; }).join("") +
+      '</ul>';
+  }
+
+  // ---------------- run header buttons ----------------
+
+  el.btnStop.addEventListener("click", function () {
+    if (!state.runId) return;
+    el.btnStop.disabled = true;
+    api("/api/runs/" + encodeURIComponent(state.runId) + "/stop", { method: "POST" }).then(function () {
+      el.btnStop.disabled = false;
+      loadRunDetail();
+      refreshRunsList();
+    }).catch(function () { el.btnStop.disabled = false; });
+  });
+
+  el.btnResume.addEventListener("click", function () {
+    if (!state.runId) return;
+    el.btnResume.disabled = true;
+    api("/api/runs/" + encodeURIComponent(state.runId) + "/resume", { method: "POST" }).then(function (res) {
+      el.btnResume.disabled = false;
+      if (!res.ok) {
+        showErrorBanner((res.body && (res.body.error || res.body.friendly)) || ("Resume failed: HTTP " + res.status));
+        return;
+      }
+      loadRunDetail();
+      refreshRunsList();
+    }).catch(function () { el.btnResume.disabled = false; });
+  });
+
+  el.btnDownload.addEventListener("click", function () {
+    if (!state.runId) return;
+    window.open("/api/runs/" + encodeURIComponent(state.runId) + "/download", "_blank");
+  });
+
+  el.btnArchive.addEventListener("click", function () {
+    if (!state.runId) return;
+    if (!window.confirm("Archive this run? It will be moved out of the active runs list.")) return;
+    api("/api/runs/" + encodeURIComponent(state.runId), { method: "DELETE" }).then(function (res) {
+      if (!res.ok) {
+        showErrorBanner((res.body && res.body.error) || ("Archive failed: HTTP " + res.status));
+        return;
+      }
+      stopDetailPolling();
+      state.runId = null;
+      el.runHeader.style.display = "none";
+      el.wall.classList.add("empty");
+      el.wall.innerHTML = "";
+      el.wallCounts.textContent = "";
+      el.feedList.innerHTML = "";
+      el.completeBadge.classList.remove("show");
+      hideErrorBanner();
+      refreshRunsList();
+    }).catch(function () {});
+  });
 
   // ---------------- start run ----------------
 
@@ -816,20 +1414,31 @@
     el.statusLine.classList.remove("error");
     el.statusLine.textContent = "Starting Foreman...";
 
+    var body = { requirements: requirements };
+    var models = {};
+    var pv = resolveModelValue(el.modelPlanner, el.modelPlannerCustom);
+    var ev = resolveModelValue(el.modelExecutor, el.modelExecutorCustom);
+    var vv = resolveModelValue(el.modelVerifier, el.modelVerifierCustom);
+    if (pv) models.planner = pv;
+    if (ev) models.executor = ev;
+    if (vv) models.verifier = vv;
+    if (Object.keys(models).length) body.models = models;
+    body.mock = !!el.demoModeCb.checked;
+
     api("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requirements: requirements }),
+      body: JSON.stringify(body),
     }).then(function (res) {
       el.startBtn.disabled = false;
       if (!res.ok) {
         el.statusLine.classList.add("error");
-        el.statusLine.textContent = (res.body && res.body.error) || ("HTTP " + res.status);
+        el.statusLine.textContent = (res.body && (res.body.error || res.body.friendly)) || ("HTTP " + res.status);
         return;
       }
       el.statusLine.classList.remove("error");
       el.statusLine.textContent = "Run started: " + res.body.run_id;
-      refreshRunPicker(res.body.run_id);
+      refreshRunsList();
       selectRun(res.body.run_id);
     }).catch(function (err) {
       el.startBtn.disabled = false;
@@ -838,21 +1447,25 @@
     });
   });
 
-  // ---------------- clock ----------------
+  // ---------------- clocks ----------------
 
   function tickClock() {
     if (state.runStartedAt) {
       var elapsed = (Date.now() / 1000) - state.runStartedAt;
-      el.clock.textContent = fmtElapsed(elapsed);
+      var s = fmtElapsed(elapsed);
+      el.clock.textContent = s;
+      el.rhClock.textContent = s;
     } else {
       el.clock.textContent = "00:00";
+      el.rhClock.textContent = "00:00";
     }
   }
   state.clockTimer = setInterval(tickClock, 1000);
 
   // ---------------- boot ----------------
 
-  refreshRunPicker();
-  setInterval(refreshRunPicker, 5000);
+  loadConfig();
+  refreshRunsList();
+  state.runsPollTimer = setInterval(refreshRunsList, 3000);
 })();
 </script>
