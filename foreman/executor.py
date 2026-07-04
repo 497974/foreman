@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 
 from .models import AttemptOutcome, Handoff, Task
+from .telemetry import METER
 from .workspace import Workspace, WorkspaceError
 
 # Tools exposed to the model. `done` ends the loop; the other four map 1:1
@@ -217,6 +218,13 @@ class Executor:
                 messages=messages,
                 tools=TOOLS,
             )
+            usage = getattr(resp, "usage", None)
+            if usage is not None:
+                METER.record(
+                    self.model,
+                    getattr(usage, "prompt_tokens", 0),
+                    getattr(usage, "completion_tokens", 0),
+                )
             choice = resp.choices[0]
             message = choice.message
             tool_calls = getattr(message, "tool_calls", None) or []

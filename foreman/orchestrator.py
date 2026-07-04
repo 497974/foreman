@@ -226,17 +226,31 @@ class Orchestrator:
     # ---- the loop ---------------------------------------------------------
 
     def run_checklist(self, requirements: str) -> dict:
-        # This overwrites the bootstrap run_id row created above with the
-        # real requirements text (create_run mints its own id — the ledger's
-        # `runs` table id does not have to match self.run_id used for the
-        # filesystem layout; only the run_dir naming needs to be decided
-        # before the ledger exists).
-        self.ledger.create_run(requirements)
-
         tasks = self.planner.plan(requirements)
-        self.ledger.add_tasks(tasks)
         self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
 
+        return self.run_tasks(requirements, tasks)
+
+    def run_tasks(self, requirements: str, tasks: list[Task]) -> dict:
+        """Queue an already-planned task list and drive it, skipping the planner.
+
+        Identical tail to ``run_checklist`` — the only difference is where the
+        tasks came from. This is what the evaluation harness's Condition C
+        (full Foreman) uses: the exam is planned exactly once, up front, by
+        the real Planner, and then fed here so every condition in the
+        three-way comparison is judged against the same frozen task list
+        rather than three different plans. ``requirements`` is recorded on
+        the run (create_run) even though it is not re-planned here, so the
+        ledger still carries the original checklist text for reference.
+
+        This overwrites the bootstrap run_id row created in __init__ with the
+        real requirements text (create_run mints its own id — the ledger's
+        `runs` table id does not have to match self.run_id used for the
+        filesystem layout; only the run_dir naming needs to be decided before
+        the ledger exists).
+        """
+        self.ledger.create_run(requirements)
+        self.ledger.add_tasks(tasks)
         return self._drive_loop()
 
     def resume_run(self, run_id: str) -> dict:

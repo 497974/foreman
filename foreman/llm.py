@@ -11,6 +11,8 @@ import json
 import re
 from typing import Any
 
+from .telemetry import METER
+
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 
@@ -45,6 +47,14 @@ def chat_json(
             temperature=temperature,
             response_format={"type": "json_object"},
         )
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            METER.record(
+                model,
+                getattr(usage, "prompt_tokens", 0),
+                getattr(usage, "completion_tokens", 0),
+            )
+
         raw = resp.choices[0].message.content or ""
         try:
             return json.loads(_strip_fence(raw))
