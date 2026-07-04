@@ -64,38 +64,76 @@ Output JSON of exactly this shape:
   "dependencies": [], "role": "backend", "complexity": 3}]}"""
 
 
+def _field(rt: dict, key: str, *aliases: str, default: str = "") -> str:
+    """Fetch a field tolerating the key-name drift LLMs produce (testStrategy,
+    test-strategy, ...). Silent empty-string fallbacks are how we shipped an
+    exam with no verification commands — tolerate spelling, never absence."""
+    for k in (key, *aliases):
+        v = rt.get(k)
+        if v:
+            return str(v)
+    return default
+
+
 class Planner:
+    # A plan whose tasks lack runnable gates is exactly the "unwinnable exam"
+    # failure we've now hit twice live. The planner's own output goes through
+    # a validation gate, and a failed validation is re-asked with the error —
+    # the same reject-with-feedback loop the executor lives under.
+    MAX_PLAN_RETRIES = 2
+
     def __init__(self, client, model: str):
         self.client = client
         self.model = model
 
     def plan(self, requirements: str) -> list[Task]:
-        data = chat_json(
-            self.client,
-            self.model,
-            system=_SYSTEM,
-            user=f"Requirements checklist:\n\n{requirements}",
-            max_tokens=8192,
-            temperature=0.2,
-        )
+        user = f"Requirements checklist:\n\n{requirements}"
+        last_err = ""
+        for _ in range(self.MAX_PLAN_RETRIES + 1):
+            data = chat_json(
+                self.client,
+                self.model,
+                system=_SYSTEM,
+                user=user if not last_err else (
+                    f"{user}\n\nYour previous plan was REJECTED: {last_err}\n"
+                    "Fix exactly that and return the full corrected JSON plan."
+                ),
+                max_tokens=8192,
+                temperature=0.2,
+            )
+            try:
+                return self._parse_and_validate(data)
+            except ValueError as e:
+                last_err = str(e)
+        raise ValueError(f"planner failed validation after retries: {last_err}")
+
+    def _parse_and_validate(self, data: dict) -> list[Task]:
         raw_tasks = data.get("tasks", [])
         if not raw_tasks:
             raise ValueError("planner returned no tasks")
 
         tasks: list[Task] = []
         for i, rt in enumerate(raw_tasks):
-            tid = rt.get("id") or f"T{i + 1:02d}"
+            tid = _field(rt, "id", "task_id") or f"T{i + 1:02d}"
             criteria = _as_list(rt.get("acceptance_criteria"))
             if not criteria:
                 # a task with no definition of done is unverifiable — reject early
                 raise ValueError(f"task {tid} has no acceptance_criteria")
+            strategy = _field(
+                rt, "test_strategy", "testStrategy", "test-strategy", "test strategy"
+            ).strip()
+            if not strategy:
+                raise ValueError(
+                    f"task {tid} has an empty test_strategy — every task needs a "
+                    "runnable pytest verification command"
+                )
             tasks.append(
                 Task(
                     task_id=tid,
                     title=rt.get("title", tid),
                     description=rt.get("description", ""),
                     acceptance_criteria=criteria,
-                    test_strategy=rt.get("test_strategy", ""),
+                    test_strategy=strategy,
                     role=rt.get("role", "generalist"),
                     complexity_score=int(rt.get("complexity", 1) or 1),
                     parents=_as_list(rt.get("dependencies")),
