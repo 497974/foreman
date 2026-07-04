@@ -1,0 +1,236 @@
+"""The Orchestrator: wires ledger + dispatcher + planner + executor + verifier
+into the single loop that turns a requirements checklist into a done project.
+
+Nothing here makes a judgement call itself — planning, executing, and
+verifying are all delegated to their own modules. This module only owns
+sequencing (claim -> execute -> submit -> verify -> record) and the run's
+durable artifacts: the ledger DB, the workspace directory, and an append-only
+events.jsonl that is the future UI/SSE data source.
+
+Parent handoffs are reconstructed from the ledger's attempt history rather
+than kept in memory, on purpose: it is the same durability property the
+ledger gives everything else. A task's executor never sees anything except
+what a fresh read of the ledger would show a brand new process.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Optional
+
+from .config import Settings, make_client
+from .dispatcher import Dispatcher
+from .executor import Executor
+from .ledger import Ledger
+from .models import AttemptOutcome, Handoff, Task, TaskStatus
+from .planner import Planner
+from .verifier import Verifier
+from .workspace import Workspace
+
+# ASCII status wall (see demo/smoke_run.py) — portable across Windows consoles
+# and cloud log capture.
+WALL = {
+    TaskStatus.DONE: "[#]", TaskStatus.IN_PROGRESS: "[>]",
+    TaskStatus.PENDING_REVIEW: "[?]", TaskStatus.BLOCKED: "[X]",
+    TaskStatus.READY: "[ ]", TaskStatus.PENDING: "[.]", TaskStatus.ARCHIVED: "[#]",
+}
+
+MAX_CLAIMS_SAFETY_CAP = 50  # global stop condition regardless of ledger state
+
+
+def status_wall(led: Ledger) -> str:
+    return " ".join(WALL[t.status] for t in led.all_tasks())
+
+
+def _feedback_reason(report) -> str:
+    """Build the string ledger.record_verdict stores into last_error.
+
+    The executor only ever sees ``task.last_error`` on its next attempt, so
+    this is the one chance the verifier's actionable feedback has to reach
+    the retry. We fold in the verifier's own one-liner plus the first few
+    actionable_feedback items (already file/expected-vs-actual flavoured per
+    contract §3).
+    """
+    parts = [report.reason]
+    extra = [f for f in report.actionable_feedback if f and f not in report.reason]
+    if extra:
+        parts.append("; ".join(extra[:3]))
+    return " | ".join(p for p in parts if p)
+
+
+def _reconstruct_handoff(task_id: str, attempts: list[dict]) -> Optional[Handoff]:
+    """Rebuild the most recent *successful* Handoff for one parent task.
+
+    The ledger stores each attempt's handoff as JSON in the ``summary``
+    column (see Ledger._record_attempt). We want the handoff belonging to the
+    attempt that actually got the task to DONE — i.e. the most recent attempt
+    with outcome == success — not just the latest attempt row (a task can
+    have later rejected attempts only if it was revived after DONE, which
+    does not happen in this system, but we still pick success-most-recent to
+    be defensive).
+    """
+    mine = [a for a in attempts if a["task_id"] == task_id]
+    if not mine:
+        return None
+    # attempts are ordered by started_at ascending (Ledger.attempt_history);
+    # walk backwards for the most recent success.
+    for row in reversed(mine):
+        if row["outcome"] == AttemptOutcome.SUCCESS.value and row["summary"]:
+            data = json.loads(row["summary"])
+            return Handoff(**data)
+    # No successful attempt recorded (should not happen for a DONE parent,
+    # but fail soft rather than crash the run).
+    row = mine[-1]
+    if row["summary"]:
+        return Handoff(**json.loads(row["summary"]))
+    return None
+
+
+class Orchestrator:
+    def __init__(self, settings: Settings, run_root: str = "runs"):
+        self.settings = settings
+        self.client = make_client(settings)
+
+        self.run_root = Path(run_root)
+        self.run_root.mkdir(parents=True, exist_ok=True)
+
+        # The run_id used for the filesystem layout (runs/<run_id>/...) is
+        # minted directly rather than via Ledger.create_run, because the
+        # ledger's db file itself must live under that same run_dir — i.e.
+        # the directory name has to be decided before the Ledger exists.
+        # ledger.create_run() is still called later (in run_checklist) to
+        # populate the `runs` table inside that db with the requirements
+        # text; its own internally-minted run_id is only used as that row's
+        # primary key and is not exposed here.
+        from .models import new_id
+        self.run_id = new_id("run")
+
+        run_dir = self.run_root / self.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        self.run_dir = run_dir
+
+        self.ledger = Ledger(db_path=str(run_dir / "ledger.db"))
+        self.workspace = Workspace(run_dir / "workspace")
+        self.dispatcher = Dispatcher(self.ledger)
+
+        self.planner = Planner(self.client, settings.planner_model)
+        self.executor = Executor(self.client, settings.executor_model, self.workspace)
+        self.verifier = Verifier(self.client, settings.verifier_model, self.workspace)
+
+        self.events_path = run_dir / "events.jsonl"
+
+    # ---- events ---------------------------------------------------------
+
+    def _emit(self, event_type: str, task_id: str = "", detail: Optional[dict] = None) -> None:
+        from .models import now_ts
+
+        line = {
+            "ts": now_ts(),
+            "type": event_type,
+            "task_id": task_id,
+            "detail": detail or {},
+        }
+        with open(self.events_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+    # ---- parent handoff reconstruction -----------------------------------
+
+    def _parent_handoffs(self, task: Task) -> list[Handoff]:
+        handoffs: list[Handoff] = []
+        for parent_id in task.parents:
+            attempts = self.ledger.attempt_history(parent_id)
+            h = _reconstruct_handoff(parent_id, attempts)
+            if h is not None:
+                handoffs.append(h)
+        return handoffs
+
+    # ---- the loop ---------------------------------------------------------
+
+    def run_checklist(self, requirements: str) -> dict:
+        import time
+
+        start = time.monotonic()
+
+        # This overwrites the bootstrap run_id row created above with the
+        # real requirements text (create_run mints its own id — the ledger's
+        # `runs` table id does not have to match self.run_id used for the
+        # filesystem layout; only the run_dir naming needs to be decided
+        # before the ledger exists).
+        self.ledger.create_run(requirements)
+
+        tasks = self.planner.plan(requirements)
+        self.ledger.add_tasks(tasks)
+        self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
+
+        claims = 0
+        worker_id = "orchestrator-worker-1"
+
+        while True:
+            tick = self.dispatcher.tick()
+
+            if tick.reclaimed:
+                for tid in tick.reclaimed:
+                    self._emit("reclaim", task_id=tid)
+            if tick.promoted:
+                for tid in tick.promoted:
+                    self._emit("promote", task_id=tid)
+
+            if tick.complete:
+                break
+            if tick.stalled:
+                break
+            if claims >= MAX_CLAIMS_SAFETY_CAP:
+                break
+
+            task = self.ledger.claim_next(worker_id, lease_seconds=900.0)
+            if task is None:
+                # Nothing ready right now (e.g. everything in_progress/blocked
+                # with no promotions possible) — this is effectively a stall
+                # the dispatcher hasn't flagged yet; stop rather than spin.
+                break
+
+            claims += 1
+            self._emit("claim", task_id=task.task_id, detail={"attempt": task.attempt_count})
+
+            dep_handoffs = self._parent_handoffs(task)
+            handoff = self.executor.execute(task, dep_handoffs)
+
+            self.ledger.submit_for_review(task.task_id, worker_id, handoff)
+            self._emit("submit", task_id=task.task_id, detail={"outcome": handoff.outcome})
+
+            report = self.verifier.verify(task, handoff)
+            reason = _feedback_reason(report)
+            new_status = self.ledger.record_verdict(task.task_id, passed=report.passed, reason=reason)
+            self._emit(
+                "verdict",
+                task_id=task.task_id,
+                detail={
+                    "passed": report.passed,
+                    "new_status": new_status.value,
+                    "reason": reason,
+                    "coverage_rate": report.coverage_rate,
+                },
+            )
+
+            print(f"  {status_wall(self.ledger)}   {task.task_id} "
+                  f"{'PASS' if report.passed else f'REJECT ({new_status.value})'}")
+
+        elapsed = time.monotonic() - start
+        counts = self.ledger.counts()
+        all_tasks = self.ledger.all_tasks()
+        attempts_per_task = {t.task_id: t.attempt_count for t in all_tasks}
+
+        return {
+            "run_id": self.run_id,
+            "run_dir": str(self.run_dir),
+            "counts": counts,
+            "done": counts.get(TaskStatus.DONE.value, 0),
+            "blocked": counts.get(TaskStatus.BLOCKED.value, 0),
+            "total_tasks": len(all_tasks),
+            "attempts_per_task": attempts_per_task,
+            "claims": claims,
+            "elapsed_s": elapsed,
+            "complete": self.ledger.is_run_complete(),
+        }

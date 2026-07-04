@@ -1,0 +1,19 @@
+Foreman run starting (mock=False) — run_id=run_62444c678a94
+  legend: [#]done [>]running [?]review [X]blocked [ ]ready [.]pending
+
+  [ ] [.] [.] [.] [.]   T01 REJECT (ready)
+  [ ] [.] [.] [.] [.]   T01 REJECT (ready)
+  [X] [.] [.] [.] [.]   T01 REJECT (blocked)
+
+--- final summary ---
+run_id: run_62444c678a94
+run_dir: runs\run_62444c678a94
+done: 0/5   blocked: 1
+claims used: 3   elapsed: 137.8s
+attempts per task:
+  T01: 3
+  T02: 0
+  T03: 0
+  T04: 0
+  T05: 0
+complete: False

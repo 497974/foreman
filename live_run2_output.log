@@ -1,0 +1,25 @@
+Foreman run starting (mock=False) — run_id=run_2e882e784078
+  legend: [#]done [>]running [?]review [X]blocked [ ]ready [.]pending
+
+  [ ] [.] [.] [.] [.]   T01 REJECT (ready)
+  [#] [.] [.] [.] [.]   T01 PASS
+  [#] [ ] [.] [.] [.]   T02 REJECT (ready)
+  [#] [ ] [.] [.] [.]   T02 REJECT (ready)
+  [#] [#] [.] [.] [.]   T02 PASS
+  [#] [#] [#] [.] [.]   T03 PASS
+  [#] [#] [#] [#] [.]   T04 PASS
+  [#] [#] [#] [#] [ ]   T05 REJECT (ready)
+  [#] [#] [#] [#] [#]   T05 PASS
+
+--- final summary ---
+run_id: run_2e882e784078
+run_dir: runs\run_2e882e784078
+done: 5/5   blocked: 0
+claims used: 9   elapsed: 1048.0s
+attempts per task:
+  T01: 2
+  T02: 3
+  T03: 1
+  T04: 1
+  T05: 2
+complete: True
