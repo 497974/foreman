@@ -13,6 +13,13 @@ Output truncation exists for the same reason context windows exist: a
 runaway command (``pip install`` chatter, an infinite test loop) must not
 blow the executor's context on the next turn. Truncating here, once, keeps
 that concern out of the executor loop entirely.
+
+``run()`` also passes every command through ``foreman.safety.is_blocked_command``
+before it ever reaches a shell: a conservative DENY list of catastrophic,
+mostly absolute-path or host-touching patterns (whole-disk wipes, registry
+surgery, shutdown, `git push`, deleting outside the workspace). It is a
+blunt guard, not a sandbox — see docs/SECURITY.md for the honest threat
+model this module does and does not cover.
 """
 
 from __future__ import annotations
@@ -21,6 +28,8 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from .safety import is_blocked_command
 
 MAX_OUTPUT = 10_000  # chars; keeps one runaway command from eating the context window
 
@@ -52,9 +61,18 @@ class Workspace:
     ``self.root`` is readable, writable, or runnable through this object.
     """
 
-    def __init__(self, root: str | Path):
+    def __init__(self, root: str | Path, allow_all: bool = False):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        # Default-deny: every command goes through is_blocked_command unless
+        # a caller opts out explicitly. The executor hands this shell to
+        # model-generated strings (see the module docstring) — the safe
+        # default for "a string an LLM invented is about to run on this
+        # machine" is to check it, not to trust it. allow_all exists for
+        # power users who have their own containment (a disposable VM/
+        # container) and find the DENY list gets in the way there; it is
+        # off by default so a fresh Workspace is never silently unguarded.
+        self.allow_all = allow_all
 
     # ---- the jail ------------------------------------------------------------
 
@@ -108,8 +126,25 @@ class Workspace:
         ``shell=True`` is required per the contract (Windows dev box, cmd.exe
         semantics) — this is why commands are never trusted with anything
         outside ``self.root``: shell=True hands the model a real shell, so
-        the *only* remaining containment is ``cwd``.
+        the remaining containment is ``cwd`` plus the command-safety check
+        below (unless this Workspace was constructed with ``allow_all=True``).
+
+        A blocked command returns a ``CommandResult`` (exit_code=126) rather
+        than raising: the executor loop must keep going and the model learns
+        from the tool result exactly like any other failed command, instead
+        of the attempt crashing.
         """
+        if not self.allow_all:
+            blocked, reason = is_blocked_command(command)
+            if blocked:
+                return CommandResult(
+                    exit_code=126,
+                    stdout="",
+                    stderr=f"blocked by Foreman command safety policy: {reason}",
+                    duration_s=0.0,
+                    timed_out=False,
+                )
+
         start = time.monotonic()
         try:
             proc = subprocess.run(
