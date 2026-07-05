@@ -219,7 +219,18 @@ class Executor:
             {"role": "user", "content": _user_message(task, dependency_handoffs)},
         ]
 
-        for _ in range(self.max_iters):
+        for i in range(self.max_iters):
+            # Wind-down: when only a couple of steps remain, remind the model
+            # once to converge — finish the current file, run the check, call
+            # done() — rather than starting new work it can't finish. Cheaper
+            # than burning the last turns exploring and then timing out.
+            if i == self.max_iters - 2 and self.max_iters >= 3:
+                messages.append({
+                    "role": "system",
+                    "content": "You are almost out of steps. Finish the current "
+                    "file, run the verification command, and call done() now.",
+                })
+
             resp = create_with_fallback(
                 self.client,
                 self.model,
