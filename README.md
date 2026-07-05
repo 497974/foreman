@@ -8,6 +8,8 @@
 > each one to an executor with a clean context, and refuses to call anything
 > done until an independent verifier proves it.
 
+![Foreman architecture](docs/architecture.svg)
+
 Built for the **Qwen Cloud Global AI Hackathon — Track 3: Agent Society**.
 Foreman is a multi-agent system whose agents divide labor, negotiate over
 rejected work, and resolve execution conflicts — with a **measured
@@ -218,6 +220,8 @@ python serve.py               # or directly; add --no-browser for headless envir
 The console (`http://127.0.0.1:8787`) is a full-featured control room, not
 just a status wall:
 
+![Status wall](docs/statuswall.svg)
+
 - **Per-role model selectors** in the New Run form (planner/executor/
   verifier), each with a "custom…" option for any DashScope model name not in
   the known list — no code change needed to try a new model.
@@ -299,6 +303,32 @@ python scripts/evaluate.py --checklist demo/requirements_mini.md --conditions AB
 - [ ] Function Compute deployment proof (steps are written in
       [`docs/DEPLOY.md`](docs/DEPLOY.md); not yet executed end-to-end against
       a live FC instance)
+
+## Limitations & roadmap
+
+Known boundaries of a focused v1 — each paired with the direction we'd take it:
+
+- **Greenfield-only today.** The executor builds new code in an isolated
+  workspace sandbox; it does not yet check out and edit an existing repo.
+  Roadmap: point `Workspace` at a cloned repo + branch instead of a fresh dir,
+  with the same jail and safety policy applying to the checkout.
+- **Verification is pytest-oriented.** The objective gate assumes
+  `test_strategy` commands are pytest/`python -c` runnable (per the frozen
+  planner contract in §5 of `docs/CONTRACTS.md`). Roadmap: a pluggable gate
+  runner so `npm test`, `go test`, or other suites qualify as first-class
+  objective gates, not just an ad-hoc shell command.
+- **Single-node SQLite ledger.** This is a deliberate choice for a local,
+  double-click tool — WAL mode gives concurrent reads for the console for
+  free, with zero infra to stand up. Roadmap: the ledger already sits behind
+  one interface (`foreman/ledger.py`), so scale-out is a backend swap
+  (Postgres/etcd-backed claim semantics), not a rewrite of the orchestrator.
+- **Evaluation is demo-scale.** The three-condition harness has been run
+  end-to-end on a 5-item checklist (5/5 referee-passed, see
+  [Evaluation](#evaluation)); the 20-item full checklist is planned but
+  pending a live quota-unblocked run. Roadmap: run
+  `scripts/evaluate.py` against `demo/requirements_full.md` once quota
+  allows, and publish the full A/B/C table alongside the 5-item result rather
+  than replacing it.
 
 ## Qwen Cloud / Alibaba Cloud integration
 
