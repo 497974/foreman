@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from .telemetry import METER
 
@@ -20,6 +20,97 @@ def _strip_fence(text: str) -> str:
     return _FENCE.sub("", text).strip()
 
 
+# ---- model fallback chain (contract §12) -----------------------------------
+#
+# We hit "insufficient_quota" three times in practice and the whole run died.
+# create_with_fallback() is the one place that knows how to route around that:
+# on a quota/permission error for model M, it transparently retries the exact
+# same call with the next model in fallback_models (skipping M itself), until
+# one works or the chain is exhausted. Both chat_json (below) and the
+# executor's raw tool-calling loop (foreman/executor.py) go through this.
+
+
+def on_model_fallback(original: str, used: str) -> None:
+    """Default no-op hook, fired when a substitution happens.
+
+    The orchestrator overwrites this at startup (module-level, so both
+    chat_json and the executor's calls — anything importing foreman.llm —
+    report through the same hook) to emit a "model_fallback" event to
+    events.jsonl. Kept as a plain module attribute (not a class) so tests can
+    monkeypatch ``foreman.llm.on_model_fallback`` directly.
+    """
+
+
+def _is_quota_or_forbidden_error(exc: BaseException) -> bool:
+    """Best-effort sniff of an insufficient_quota / 403 style error.
+
+    We don't depend on any specific SDK exception hierarchy here (that would
+    couple us to the exact `openai` version) — we inspect the exception's
+    message and, if present, a `status_code` attribute, which is how the
+    `openai` SDK's APIStatusError subclasses expose the HTTP status.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    text = str(exc).lower()
+    if "insufficient_quota" in text:
+        return True
+    if status == 403:
+        return True
+    if "403" in text and "forbidden" in text:
+        return True
+    return False
+
+
+def _is_persistent_429(exc: BaseException) -> bool:
+    """A 429 (rate limit) that we treat as chain-worthy.
+
+    Contract: "429 after retries" persists — since chat_json's own retry loop
+    already re-issues the same call on failure, by the time create_with_fallback
+    is asked to fall back it is reasonable to treat any 429 as persistent for
+    that call and just move to the next model rather than hang the run.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    text = str(exc).lower()
+    return status == 429 or "429" in text or "rate limit" in text or "rate_limit" in text
+
+
+def create_with_fallback(
+    client,
+    model: str,
+    fallback_models: list[str] | None = None,
+    **create_kwargs: Any,
+):
+    """Call ``client.chat.completions.create`` with automatic model fallback.
+
+    On an insufficient_quota/403 (or a persistent 429) for ``model``, retries
+    the exact same call against the next model in ``fallback_models`` that is
+    not equal to the one that just failed, in order, until one succeeds or the
+    list is exhausted (in which case the original exception is re-raised).
+    Any other exception (e.g. a plain 400 — bad request) is never swallowed:
+    it propagates immediately, since silently masking a real bug behind
+    "just try another model" would hide it forever.
+    """
+    fallback_models = fallback_models or []
+    tried = {model}
+    current = model
+    last_exc: BaseException | None = None
+
+    while True:
+        try:
+            return client.chat.completions.create(model=current, **create_kwargs)
+        except Exception as exc:  # noqa: BLE001 - re-raised below if not quota-shaped
+            if not (_is_quota_or_forbidden_error(exc) or _is_persistent_429(exc)):
+                raise
+            last_exc = exc
+            next_model = next(
+                (m for m in fallback_models if m and m not in tried), None
+            )
+            if next_model is None:
+                raise
+            tried.add(next_model)
+            on_model_fallback(current, next_model)
+            current = next_model
+
+
 def chat_json(
     client,
     model: str,
@@ -28,11 +119,16 @@ def chat_json(
     max_tokens: int = 4096,
     temperature: float = 0.2,
     retries: int = 2,
+    fallback_models: list[str] | None = None,
 ) -> dict[str, Any]:
     """Call the model and parse a JSON object from its reply.
 
     Retries on a parse failure, re-asking with the malformed output quoted back.
     The word "json" is guaranteed present (DashScope rejects json mode otherwise).
+    ``fallback_models`` (contract §12) is threaded through to
+    ``create_with_fallback`` so a quota/403 error on ``model`` transparently
+    substitutes the next model in the chain instead of killing the run;
+    defaults to an empty list so existing callers see no behavior change.
     """
     messages = [
         {"role": "system", "content": system + "\n\nRespond with a single JSON object."},
@@ -40,8 +136,10 @@ def chat_json(
     ]
     last_err = ""
     for attempt in range(retries + 1):
-        resp = client.chat.completions.create(
-            model=model,
+        resp = create_with_fallback(
+            client,
+            model,
+            fallback_models,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,

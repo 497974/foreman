@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 
+from .llm import create_with_fallback
 from .models import AttemptOutcome, Handoff, Task
 from .telemetry import METER
 from .workspace import Workspace, WorkspaceError
@@ -199,12 +200,18 @@ class Executor:
         workspace: Workspace,
         max_iters: int = 15,
         command_timeout: float = 120.0,
+        fallback_models: list[str] | None = None,
     ):
         self.client = client
         self.model = model
         self.workspace = workspace
         self.max_iters = max_iters
         self.command_timeout = command_timeout
+        # Contract §12: models to substitute in, in order, on insufficient_quota
+        # / 403 / persistent 429 for self.model. Wired from Settings by the
+        # orchestrator; defaults to [] so existing direct construction (tests,
+        # mocks) sees no behavior change.
+        self.fallback_models = fallback_models or []
 
     def execute(self, task: Task, dependency_handoffs: list[Handoff]) -> Handoff:
         messages: list[dict] = [
@@ -213,8 +220,10 @@ class Executor:
         ]
 
         for _ in range(self.max_iters):
-            resp = self.client.chat.completions.create(
-                model=self.model,
+            resp = create_with_fallback(
+                self.client,
+                self.model,
+                self.fallback_models,
                 messages=messages,
                 tools=TOOLS,
             )

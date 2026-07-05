@@ -10,7 +10,7 @@ against the live console.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -31,6 +31,10 @@ def load_env(path: str | os.PathLike = ".env") -> None:
         os.environ.setdefault(key, val)
 
 
+def _default_fallback_models() -> list[str]:
+    return ["qwen-turbo", "qwen-flash", "qwen3-coder-flash"]
+
+
 @dataclass(frozen=True)
 class Settings:
     api_key: str
@@ -41,6 +45,10 @@ class Settings:
     # Which executor writes the code: "native" (hand-written tool loop, default)
     # or "qwen-code" (delegate to Alibaba's qwen-code CLI). See foreman/backends.py.
     executor_backend: str = "native"
+    # Contract §12: models to fall back to (in order) when the primary model
+    # hits insufficient_quota/403 or a persistent 429. We hit this three times
+    # in practice and the whole run died — this is what makes it a non-issue.
+    fallback_models: list[str] = field(default_factory=_default_fallback_models)
 
     @classmethod
     def from_env(cls, env_path: str | os.PathLike = ".env") -> "Settings":
@@ -54,6 +62,12 @@ class Settings:
             "DASHSCOPE_BASE_URL",
             "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         )
+        fallback_raw = os.environ.get("FOREMAN_FALLBACK_MODELS", "")
+        fallback_models = (
+            [m.strip() for m in fallback_raw.split(",") if m.strip()]
+            if fallback_raw.strip()
+            else _default_fallback_models()
+        )
         return cls(
             api_key=api_key,
             base_url=base_url,
@@ -62,6 +76,7 @@ class Settings:
             executor_model=os.environ.get("FOREMAN_EXECUTOR_MODEL", "qwen3-coder-plus"),
             verifier_model=os.environ.get("FOREMAN_VERIFIER_MODEL", "qwen-plus"),
             executor_backend=os.environ.get("FOREMAN_EXECUTOR_BACKEND", "native"),
+            fallback_models=fallback_models,
         )
 
 

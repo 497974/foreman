@@ -20,6 +20,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from . import llm
 from .arbiter import Arbiter, solicit_dispute
 from .backends import make_executor
 from .config import Settings, make_client
@@ -131,6 +132,17 @@ class Orchestrator:
         # attempt number, so a task cannot re-litigate a later rejection
         # either — the appeal is a single use, not one per attempt.
         self.disputed_task_ids: set[str] = set()
+
+        # Contract §12: quota-exhaustion should degrade gracefully instead of
+        # killing the run. Wire the fallback chain into the executor and
+        # register the module-level hook so a substitution shows up in
+        # events.jsonl (and therefore the console/README) instead of silently
+        # vanishing into stdout.
+        self.executor.fallback_models = list(settings.fallback_models)
+        llm.on_model_fallback = self._on_model_fallback
+
+    def _on_model_fallback(self, original: str, used: str) -> None:
+        self._emit("model_fallback", detail={"from": original, "to": used})
 
     # ---- events ---------------------------------------------------------
 
