@@ -335,3 +335,73 @@ completed_work, files_touched, gotchas — parse attempts[].summary as JSON,
 fall back to raw text). Error events + quota-friendly messages render as a
 dismissible red banner above the wall. Empty states for no-runs and no-key.
 No frameworks; keep total file under ~60KB.
+
+---
+# Addendum 3 (frozen 2026-07-04 late): Judge-scored hardening
+Three parallel tracks. Each agent owns disjoint files. All tests stay green
+(currently 123). No new pip deps (stdlib+openai+pytest). English comments in
+existing voice.
+
+## 11. Command safety policy (foreman/workspace.py + tests)
+The executor's run_command currently runs anything via shell=True with only a
+path jail on file ops. Add a command-safety layer WITHOUT breaking existing
+behavior/tests:
+- New foreman/safety.py: `is_blocked_command(cmd: str) -> tuple[bool, str]`.
+  Block, by conservative substring/regex, clearly destructive host-touching
+  ops: `rm -rf /`, `rm -rf ~`, del/rmdir of drive roots, `format`, `shutdown`,
+  `reboot`, `mkfs`, `dd if=`, `:(){` fork bomb, curl|bash / iwr|iex pipe-to-shell,
+  `git push` (don't let sandbox work escape), writing outside cwd via absolute
+  paths in rm/mv, registry edits (`reg delete`), `netsh`, `taskkill /f`.
+  Return (True, human reason) if blocked, else (False, "").
+- Workspace.run(): before executing, call is_blocked_command; if blocked,
+  return a CommandResult(exit_code=126, stdout="", stderr="blocked by Foreman
+  command safety policy: <reason>", duration_s=0, timed_out=False) instead of
+  running it. Add a `allow_all: bool=False` Workspace ctor flag (default False)
+  that bypasses the check for power users; document why default-deny.
+- docs/SECURITY.md: threat model — sandbox scope (cwd jail + command policy),
+  what it does/doesn't protect against (honest: not a container; --yolo agents
+  run at process privilege), recommended hardening for production (Docker/FC
+  ephemeral instance), and that this is a demo-grade guardrail.
+- Tests tests/test_safety.py: blocked patterns caught, benign commands
+  (pytest, python, echo, ls, mkdir within cwd) pass, Workspace.run returns 126
+  on blocked, allow_all bypasses. Full suite green.
+
+## 12. Model fallback chain (foreman/llm.py + foreman/config.py + tests)
+We hit "insufficient_quota" three times and the whole run died. Make the client
+resilient AND make it a feature:
+- config: Settings gains `fallback_models: list[str]` (from env
+  FOREMAN_FALLBACK_MODELS, comma-sep; default "qwen-turbo,qwen-flash,qwen3-coder-flash").
+- foreman/llm.py: a thin wrapper used by chat_json AND the executor's raw
+  completions — on a 403/insufficient_quota (or 429 after retries) for model M,
+  transparently retry the SAME call with the next model in the chain not equal
+  to M; emit nothing to stdout but expose the substitution via a module-level
+  callback hook `on_model_fallback(original, used)` (default no-op) so the
+  orchestrator can log a "model_fallback" event. Keep it minimal; don't change
+  chat_json's signature.
+- Wire executor.py's completions call through the same fallback helper (small
+  refactor: extract the "create with fallback" into llm.py, call it from both).
+- orchestrator: register on_model_fallback to emit a "model_fallback" event to
+  events.jsonl (so the UI/README can show graceful degradation).
+- Tests tests/test_fallback.py with a fake client that raises insufficient_quota
+  on model A then succeeds on model B: assert the call succeeds via B, callback
+  fired with (A,B), and that a non-quota error is NOT swallowed. Full suite green.
+
+## 13. Executor wind-down + README visuals (foreman/executor.py + README + docs/)
+(a) Executor: when the loop reaches its last 2 iterations without done(), inject
+one system nudge: "You are almost out of steps — finish the current file, run
+the verification command, and call done() now." Only once. Keep max_iters
+behavior/tests intact (the existing timeout-handoff test must still pass).
+(b) Create docs/architecture.svg — a clean architecture diagram (hand-written
+SVG, no external tools): requirements -> Planner -> Ledger <- Dispatcher(pure
+code) -> Executor(native | qwen-code) -> Verifier(gates) -> dispute/arbiter ->
+done; show the durable ledger + resume + web console. Steel-blue #1E4E79 /
+orange #D9700A palette. Embed it at the top of README (after the tagline) via
+![Architecture](docs/architecture.svg), and add a second small SVG
+docs/statuswall.svg mocking the four-color status wall so the README shows what
+the console looks like without a screenshot dependency.
+(c) README: add an honest "## Limitations & roadmap" section — greenfield-only
+(builds new code in a sandbox, doesn't yet edit existing repos), pytest-oriented
+verification, single-node SQLite ledger (by design; scale-out path noted),
+demo-scale evaluation (5-item verified; 20-item pending). Frame each with the
+roadmap direction. Keep it tight and confident, not apologetic.
+Full suite green after (a).
