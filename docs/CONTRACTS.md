@@ -405,3 +405,163 @@ verification, single-node SQLite ledger (by design; scale-out path noted),
 demo-scale evaluation (5-item verified; 20-item pending). Frame each with the
 roadmap direction. Keep it tight and confident, not apologetic.
 Full suite green after (a).
+
+---
+# Addendum 4 (frozen 2026-07-04 night): Existing-project mode
+
+Two agents build this in parallel, file-disjoint (a prior round collided on a
+shared file — this time: Agent A owns orchestrator/planner/executor/main.py/
+new git+repo modules; Agent B owns serve.py/webui/README/new docs file. Never
+touch the other's files. Stage only your own files on commit.).
+
+## 14. git_safety.py + repo_context.py + orchestrator/planner/CLI wiring (Agent A)
+
+### foreman/git_safety.py (new)
+Functions (all subprocess calls: list-form args, encoding="utf-8",
+errors="replace" — the SAME fix backends.py needed for qwen-code; git also
+emits non-ASCII, do not rediscover that bug; use cwd=path or -C path):
+
+- class GitSafetyError(RuntimeError): ...
+- is_git_repo(path) -> bool : `git -C <path> rev-parse --is-inside-work-tree`
+- repo_root(path) -> Path | None : `git -C <path> rev-parse --show-toplevel`
+- is_clean(path) -> bool : `git -C <path> status --porcelain` is empty?
+- create_or_checkout_branch(path, branch: str) -> None :
+  `git -C <path> branch --list <branch>`; empty output -> `checkout -b <branch>`,
+  else -> `checkout <branch>` (idempotent — resume calls this again safely).
+- commit_all(path, message: str) -> bool :
+  `git -C <path> add -A` then check `git -C <path> diff --cached --quiet`
+  (nonzero exit = something IS staged) before `git -C <path> commit -m <message>`.
+  Returns True if a commit was made, False if there was nothing to commit
+  (never make an --allow-empty commit).
+- ensure_ready(path, force_dirty: bool = False) -> None :
+  Raises GitSafetyError with an ACTIONABLE message (what to do) if:
+  not is_git_repo(path) -> "run `git init` in that folder first";
+  repo_root(path) != resolved(path) -> "point Foreman at the repo ROOT
+  (<repo_root>), not a subdirectory — this avoids partial-repo commits";
+  not force_dirty and not is_clean(path) -> "commit or stash your changes
+  first, or pass force_dirty=True to proceed anyway (not recommended)".
+
+### foreman/repo_context.py (new)
+build_repo_snapshot(root: Path, max_depth=3, max_entries=200, max_preview_chars=2000) -> str
+— a directory tree (skip .git/node_modules/__pycache__/venv/.venv/dist/build)
+plus truncated previews of any of README.md/package.json/requirements.txt/
+pyproject.toml/Cargo.toml/go.mod that exist at the root. Purely textual, no
+git dependency. This orients the Planner; it is NOT a live source of truth
+(the executor still uses list_dir/read_file for ground truth at execution time).
+
+### foreman/orchestrator.py — Orchestrator.__init__ gains:
+project_dir: str | Path | None = None, force_dirty: bool = False
+When project_dir is given:
+1. git_safety.ensure_ready(project_dir, force_dirty) — raises GitSafetyError
+   (let it propagate; the CLI/API layer turns it into a clean user-facing error).
+2. branch = f"foreman/{self.run_id}"; git_safety.create_or_checkout_branch(project_dir, branch).
+3. self.workspace = Workspace(Path(project_dir)) INSTEAD of run_dir/"workspace".
+   Ledger db / events.jsonl / config.json still live under run_dir as always —
+   only the code workspace itself moves; Foreman's own bookkeeping never
+   pollutes the user's repo.
+4. Write run_dir / "project_mode.json": {"project_dir": str(resolved_path), "branch": branch}.
+5. self._emit("project_mode", detail={"project_dir": ..., "branch": branch}).
+6. Build repo_context = repo_context.build_repo_snapshot(project_dir) and pass
+   it to self.planner.plan(requirements, repo_context=repo_context).
+7. Construct Executor with existing_project=True (see below).
+
+Commit-after-DONE: read the orchestrator's task-completion flow (both the
+plain-verify-pass path and the dispute/arbitration-overturn path funnel into
+one place before ledger.record_verdict(passed=True, ...) — find that single
+point by reading the file, don't guess a line number). Right there, if
+self.project_dir is set and passed is True, call
+git_safety.commit_all(self.project_dir, f"Foreman: {task.task_id} {task.title}").
+One commit per task, only on a real pass.
+
+resume_run(run_id): BEFORE constructing Workspace, check for
+run_dir / "project_mode.json". If present, read its project_dir/branch,
+point Workspace there, and call create_or_checkout_branch again (idempotent —
+this is what makes --resume work correctly for an existing-project run
+without the caller re-specifying project_dir).
+
+### foreman/planner.py
+Planner.plan(self, requirements: str, repo_context: str = "") -> list[Task]
+— when non-empty, append a "## Existing project context" section to the user
+message with the snapshot, plus one line telling the model: tasks should
+respect existing structure/conventions and avoid recreating files that already
+serve the same purpose. Default "" preserves current greenfield behavior exactly.
+
+### foreman/executor.py
+Executor.__init__(..., existing_project: bool = False). When True, append one
+line to SYSTEM_PROMPT (not replace it): "This is an EXISTING codebase, not a
+fresh scaffold — read relevant files before editing them, and follow existing
+conventions rather than rewriting things from scratch unless the task says to."
+Default False = zero behavior change for greenfield mode / existing tests.
+
+### main.py CLI
+Add --project-dir PATH and --force-dirty (store_true) to the --checklist
+branch (not to --resume — resume reads project_mode.json automatically, per
+above). On a GitSafetyError, print its message and exit 1 (no traceback).
+
+### Tests (new files only — do not edit existing test_orchestrator.py etc.)
+tests/test_git_safety.py — use the REAL git binary via subprocess against a
+tmp_path (git is present in this dev environment): is_git_repo True/False,
+repo_root matches/mismatches a subdirectory, is_clean true/false after writing
+a file, create_or_checkout_branch creates then re-checks-out idempotently,
+commit_all returns False on no-op and True after a real change, ensure_ready
+raises GitSafetyError with the right message for each of the three failure
+modes and passes when everything is fine.
+tests/test_repo_context.py — snapshot includes files at depth<=max_depth,
+excludes .git/node_modules/etc., truncates a large README.
+tests/test_orchestrator_existing_project.py — build a tmp_path git repo (git
+init, one commit, one existing test file), point a mocked Orchestrator
+(reuse foreman/mocks.py's fakes, per tests/test_orchestrator.py's existing
+pattern) at it via project_dir, run a 1-2 task checklist, assert: a
+foreman/<run_id> branch was created, the ORIGINAL branch (main/master) has
+zero new commits (only the foreman branch does), a commit exists per
+completed task, and project_mode.json was written. Also test resume_run
+re-derives project_dir/branch from project_mode.json without being told again.
+
+Full suite green (currently 165 + yours). Commit ONLY: foreman/git_safety.py,
+foreman/repo_context.py, foreman/orchestrator.py, foreman/planner.py,
+foreman/executor.py, main.py, tests/test_git_safety.py, tests/test_repo_context.py,
+tests/test_orchestrator_existing_project.py. Message: "Existing-project mode:
+git-safety-gated real-repo editing on an isolated branch" + trailer
+"Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>".
+
+## 15. API + web console + docs (Agent B)
+
+### serve.py POST /api/runs
+Accept optional "project_dir": str and "force_dirty": bool in the body,
+threaded into Orchestrator(...). On GitSafetyError, respond 400 with its
+message verbatim (it is already human-actionable per §14). Do not touch
+foreman/orchestrator.py — only serve.py's own call site.
+
+### foreman/webui/index.html (the ONLY frontend file — same one from Console v2/i18n)
+In the "New Run" card, add an optional text input "Existing project folder
+(optional)" below the requirements textarea, plus a checkbox "I understand
+this will create a git branch and modify real files in that folder" that must
+be checked for the field to be sent (client-side guard, not a security
+boundary — the real guard is server-side git_safety). If project_dir is set,
+show the branch name (foreman/<run_id>, once known from run detail) in the run
+header chips area alongside the existing model/mock chips. Route the error
+banner to show a GitSafetyError's message clearly (it already renders generic
+"error" events — confirm the message text is not truncated). Respect the i18n
+system already in this file (add EN+ZH strings for the new label/checkbox/hint
+to both STRINGS.en and STRINGS.zh — do not leave new UI text untranslated).
+
+### README.md
+Add a short "## Working on an existing project" section (near Quickstart):
+one paragraph explaining --project-dir / the web console field, the safety
+model (git required, isolated branch, per-task commits, your main branch is
+never touched), and a pointer to docs/EXISTING_PROJECTS.md for detail. Keep it
+tight, same voice as the rest of the file.
+
+### docs/EXISTING_PROJECTS.md (new)
+A short guide: prerequisites (folder must be a git repo, ideally clean),
+CLI usage (python main.py --checklist reqs.md --project-dir C:\path\to\repo),
+web console usage, what happens (branch created, per-task commits, review with
+git log foreman/<run_id> / git diff main...foreman/<run_id>, merge or delete
+the branch yourself — Foreman never auto-merges), and the force-dirty escape
+hatch with an explicit "not recommended" warning.
+
+Verify python -m pytest -q stays green after your edits (you are not adding
+Python logic, just wiring — but confirm nothing else broke). Commit ONLY:
+serve.py, foreman/webui/index.html, README.md, docs/EXISTING_PROJECTS.md.
+Message: "Existing-project mode: API + console UI + docs" + trailer
+"Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>".
