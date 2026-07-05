@@ -23,7 +23,7 @@
     --c-grey: #9aa2ab;
     --c-grey-bg: #eceeef;
 
-    font-family: "Segoe UI", "Consolas", Tahoma, Arial, sans-serif;
+    font-family: "Segoe UI", "Consolas", Tahoma, Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -56,6 +56,8 @@
     gap: 14px;
     border-bottom: 3px solid var(--orange);
     flex-shrink: 0;
+    position: relative;
+    z-index: 60;
   }
 
   header .brand {
@@ -125,6 +127,31 @@
     display: none;
   }
   header .run-complete-badge.show { display: inline-block; }
+
+  .lang-switch {
+    display: flex;
+    align-items: center;
+    border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .lang-switch button {
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.75);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .lang-switch button + button { border-left: 1px solid rgba(255,255,255,0.4); }
+  .lang-switch button:hover { background: rgba(255,255,255,0.12); }
+  .lang-switch button.active {
+    background: var(--orange);
+    color: #fff;
+  }
 
   .hdr-btn {
     border: 1px solid rgba(255,255,255,0.4);
@@ -440,7 +467,7 @@
   }
 
   .wall.empty::after {
-    content: "No run selected. Configure a run on the left and press Start.";
+    content: attr(data-empty-text);
     grid-column: 1 / -1;
     color: var(--ink-soft);
     font-size: 13px;
@@ -679,56 +706,60 @@
 
 <header>
   <div class="brand"><span class="mark"></span> FOREMAN</div>
-  <div class="run-complete-badge" id="complete-badge">All Green</div>
+  <div class="lang-switch" id="lang-switch">
+    <button type="button" id="lang-btn-en" data-lang="en">EN</button>
+    <button type="button" id="lang-btn-zh" data-lang="zh">中文</button>
+  </div>
+  <div class="run-complete-badge" id="complete-badge" data-i18n="allGreen">All Green</div>
   <div class="spacer"></div>
   <div class="clock tabular" id="clock">00:00</div>
 </header>
 
 <div class="layout">
   <div class="left-panel">
-    <h2>New Run</h2>
-    <div class="field-label">Template</div>
-    <select id="template-select"><option value="">— blank —</option></select>
+    <h2 data-i18n="newRun">New Run</h2>
+    <div class="field-label" data-i18n="template">Template</div>
+    <select id="template-select"><option value="" data-i18n="blankOption">— blank —</option></select>
 
-    <div class="field-label">Requirements checklist</div>
-    <textarea id="checklist" placeholder="1. Build a Flask health-check endpoint.&#10;2. Add a SQLite model...&#10;3. ..."></textarea>
+    <div class="field-label" data-i18n="checklist">Requirements checklist</div>
+    <textarea id="checklist" data-i18n-placeholder="checklistPlaceholder" placeholder="1. Build a Flask health-check endpoint.&#10;2. Add a SQLite model...&#10;3. ..."></textarea>
 
     <div class="model-row">
-      <div class="field-label">Planner model</div>
+      <div class="field-label" data-i18n="plannerModel">Planner model</div>
       <select id="model-planner"></select>
-      <input type="text" id="model-planner-custom" placeholder="custom model id" style="display:none;">
+      <input type="text" id="model-planner-custom" data-i18n-placeholder="customModelId" placeholder="custom model id" style="display:none;">
     </div>
     <div class="model-row">
-      <div class="field-label">Executor model</div>
+      <div class="field-label" data-i18n="executorModel">Executor model</div>
       <select id="model-executor"></select>
-      <input type="text" id="model-executor-custom" placeholder="custom model id" style="display:none;">
+      <input type="text" id="model-executor-custom" data-i18n-placeholder="customModelId" placeholder="custom model id" style="display:none;">
     </div>
     <div class="model-row">
-      <div class="field-label">Verifier model</div>
+      <div class="field-label" data-i18n="verifierModel">Verifier model</div>
       <select id="model-verifier"></select>
-      <input type="text" id="model-verifier-custom" placeholder="custom model id" style="display:none;">
+      <input type="text" id="model-verifier-custom" data-i18n-placeholder="customModelId" placeholder="custom model id" style="display:none;">
     </div>
 
     <label class="checkbox-row">
       <input type="checkbox" id="demo-mode-cb">
-      Demo mode — runs without an API key
+      <span data-i18n="demoMode">Demo mode — runs without an API key</span>
     </label>
     <div class="hint" id="demo-mode-hint" style="display:none;"></div>
 
-    <button class="start-btn" id="start-btn">Start Foreman</button>
+    <button class="start-btn" id="start-btn" data-i18n="startForeman">Start Foreman</button>
     <div class="status-line" id="status-line"></div>
 
     <hr class="sep">
-    <h2>Runs</h2>
+    <h2 data-i18n="runs">Runs</h2>
     <div class="runs-list" id="runs-list"></div>
 
     <hr class="sep">
-    <h2>Legend</h2>
+    <h2 data-i18n="legend">Legend</h2>
     <div class="legend">
-      <span class="sw"><span class="dot" style="background:var(--c-done)"></span>Done</span>
-      <span class="sw"><span class="dot" style="background:var(--c-blocked)"></span>Blocked</span>
-      <span class="sw"><span class="dot" style="background:var(--c-amber)"></span>In progress / review</span>
-      <span class="sw"><span class="dot" style="background:var(--c-grey)"></span>Pending / ready</span>
+      <span class="sw"><span class="dot" style="background:var(--c-done)"></span><span data-i18n="legendDone">Done</span></span>
+      <span class="sw"><span class="dot" style="background:var(--c-blocked)"></span><span data-i18n="legendBlocked">Blocked</span></span>
+      <span class="sw"><span class="dot" style="background:var(--c-amber)"></span><span data-i18n="legendInProgressReview">In progress / review</span></span>
+      <span class="sw"><span class="dot" style="background:var(--c-grey)"></span><span data-i18n="legendPendingReady">Pending / ready</span></span>
     </div>
   </div>
 
@@ -738,14 +769,14 @@
       <span class="rh-chip" id="rh-chip-planner"></span>
       <span class="rh-chip" id="rh-chip-executor"></span>
       <span class="rh-chip" id="rh-chip-verifier"></span>
-      <span class="rh-chip mock" id="rh-chip-mock" style="display:none;">MOCK</span>
+      <span class="rh-chip mock" id="rh-chip-mock" style="display:none;" data-i18n="mockChip" title="Demo mode — synthetic output, no live API calls" data-i18n-title="mockChipTooltip">MOCK</span>
       <span class="rh-cost tabular" id="rh-cost"></span>
       <span class="rh-clock tabular" id="rh-clock">00:00</span>
       <div class="rh-spacer"></div>
-      <button class="rh-btn stop" id="btn-stop">Stop</button>
-      <button class="rh-btn resume" id="btn-resume">Resume</button>
-      <button class="rh-btn" id="btn-download">Download</button>
-      <button class="rh-btn archive" id="btn-archive">Archive</button>
+      <button class="rh-btn stop" id="btn-stop" data-i18n="stop">Stop</button>
+      <button class="rh-btn resume" id="btn-resume" data-i18n="resume">Resume</button>
+      <button class="rh-btn" id="btn-download" data-i18n="download">Download</button>
+      <button class="rh-btn archive" id="btn-archive" data-i18n="archive">Archive</button>
     </div>
 
     <div class="error-banner" id="error-banner">
@@ -754,13 +785,13 @@
     </div>
 
     <div class="wall-header">
-      <h1>Status Wall</h1>
+      <h1 data-i18n="statusWall">Status Wall</h1>
       <span class="counts" id="wall-counts"></span>
     </div>
-    <div class="wall empty" id="wall"></div>
+    <div class="wall empty" id="wall" data-empty-text="No run selected. Configure a run on the left and press Start."></div>
 
     <div class="feed-panel">
-      <div class="feed-header"><span class="live-dot"></span> Live Event Feed</div>
+      <div class="feed-header"><span class="live-dot"></span> <span data-i18n="liveEventFeed">Live Event Feed</span></div>
       <div class="feed-list" id="feed-list"></div>
     </div>
   </div>
@@ -779,6 +810,254 @@
 <script>
 (function () {
   "use strict";
+
+  // ---------------- i18n ----------------
+
+  var STRINGS = {
+    en: {
+      newRun: "New Run",
+      template: "Template",
+      blankOption: "— blank —",
+      checklist: "Requirements checklist",
+      checklistPlaceholder: "1. Build a Flask health-check endpoint.\n2. Add a SQLite model...\n3. ...",
+      plannerModel: "Planner model",
+      executorModel: "Executor model",
+      verifierModel: "Verifier model",
+      customModelId: "custom model id",
+      customOption: "custom…",
+      demoMode: "Demo mode — runs without an API key",
+      noKeyHint: "No API key configured — demo mode is locked on. Add DASHSCOPE_API_KEY in .env to run live.",
+      startForeman: "Start Foreman",
+      runs: "Runs",
+      legend: "Legend",
+      legendDone: "Done",
+      legendBlocked: "Blocked",
+      legendInProgressReview: "In progress / review",
+      legendPendingReady: "Pending / ready",
+      noRunsYet: "No runs yet. Configure a run above and press Start.",
+      statusWall: "Status Wall",
+      liveEventFeed: "Live Event Feed",
+      allGreen: "All Green",
+      mockChip: "MOCK",
+      mockChipTooltip: "Demo mode — synthetic output, no live API calls",
+      stop: "Stop",
+      resume: "Resume",
+      download: "Download",
+      archive: "Archive",
+      archiveConfirm: "Archive this run? It will be moved out of the active runs list.",
+      noRunSelected: "No run selected. Configure a run on the left and press Start.",
+      typeRequirementsFirst: "Type a requirements checklist first.",
+      startingForeman: "Starting Foreman...",
+      runStarted: "Run started: {0}",
+      requestFailed: "Request failed: {0}",
+      resumeFailed: "Resume failed: HTTP {0}",
+      archiveFailed: "Archive failed: HTTP {0}",
+      httpError: "HTTP {0}",
+      runStoppedByUser: "Run stopped by user.",
+      genericRunError: "An error occurred during the run.",
+      tok: "tok",
+      chipPlanner: "planner: {0}",
+      chipExecutor: "executor: {0}",
+      chipVerifier: "verifier: {0}",
+      drawerDescription: "Description",
+      drawerAcceptanceCriteria: "Acceptance Criteria",
+      drawerNoneRecorded: "none recorded",
+      drawerLatestFeedback: "Latest Feedback",
+      drawerAttemptHistory: "Attempt History ({0})",
+      drawerNoAttempts: "no attempts yet",
+      drawerAttempt: "Attempt {0}",
+      drawerCompletedWork: "Completed work",
+      drawerFilesTouched: "Files touched",
+      drawerGotchas: "Gotchas",
+      countDone: "done",
+      countBlocked: "blocked",
+      countInProgress: "in progress",
+      countReview: "review",
+      countReady: "ready",
+      countPending: "pending",
+      countTotal: "total",
+      untitled: "(untitled)",
+      attemptShort: "attempt {0}",
+      feedPass: "PASS -> {0}: {1}",
+      feedReject: "REJECT -> {0}: {1}",
+      feedPlan: "{0} tasks planned: {1}",
+      feedClaim: "attempt {0}",
+      feedSubmit: "outcome: {0}",
+      feedArbitration: "{0}: {1}",
+      feedStopSentinel: "stop sentinel honored",
+      status_done: "done",
+      status_blocked: "blocked",
+      status_in_progress: "in progress",
+      status_pending_review: "pending review",
+      status_disputing: "disputing",
+      status_pending: "pending",
+      status_ready: "ready",
+      status_archived: "archived",
+      outcome_success: "success",
+      outcome_rejected_by_verifier: "rejected by verifier",
+      outcome_crashed: "crashed",
+      outcome_timeout: "timeout",
+    },
+    zh: {
+      newRun: "新建运行",
+      template: "模板",
+      blankOption: "— 空白 —",
+      checklist: "需求清单",
+      checklistPlaceholder: "1. 构建一个 Flask 健康检查接口。\n2. 添加一个 SQLite 模型...\n3. ...",
+      plannerModel: "规划器模型",
+      executorModel: "执行器模型",
+      verifierModel: "验收器模型",
+      customModelId: "自定义模型 ID",
+      customOption: "自定义…",
+      demoMode: "演示模式 — 无需 API Key 运行",
+      noKeyHint: "未配置 API Key — 已锁定为演示模式。在 .env 中添加 DASHSCOPE_API_KEY 以正式运行。",
+      startForeman: "启动 Foreman",
+      runs: "运行列表",
+      legend: "图例",
+      legendDone: "完成",
+      legendBlocked: "受阻",
+      legendInProgressReview: "进行中·待审",
+      legendPendingReady: "等待·就绪",
+      noRunsYet: "暂无运行记录。请在上方配置一次运行并点击开始。",
+      statusWall: "状态墙",
+      liveEventFeed: "实时事件流",
+      allGreen: "全部通过",
+      mockChip: "演示",
+      mockChipTooltip: "演示模式 — 合成输出，不调用真实 API",
+      stop: "停止",
+      resume: "续跑",
+      download: "下载",
+      archive: "归档",
+      archiveConfirm: "归档此运行？它将从当前运行列表中移出。",
+      noRunSelected: "尚未选择运行。请在左侧配置一次运行并点击开始。",
+      typeRequirementsFirst: "请先输入需求清单。",
+      startingForeman: "正在启动 Foreman...",
+      runStarted: "运行已启动：{0}",
+      requestFailed: "请求失败：{0}",
+      resumeFailed: "续跑失败：HTTP {0}",
+      archiveFailed: "归档失败：HTTP {0}",
+      httpError: "HTTP {0}",
+      runStoppedByUser: "运行已被用户停止。",
+      genericRunError: "运行过程中发生错误。",
+      tok: "token",
+      chipPlanner: "规划器: {0}",
+      chipExecutor: "执行器: {0}",
+      chipVerifier: "验收器: {0}",
+      drawerDescription: "描述",
+      drawerAcceptanceCriteria: "验收标准",
+      drawerNoneRecorded: "暂无记录",
+      drawerLatestFeedback: "反馈",
+      drawerAttemptHistory: "尝试记录（{0}）",
+      drawerNoAttempts: "暂无尝试记录",
+      drawerAttempt: "尝试 {0}",
+      drawerCompletedWork: "已完成工作",
+      drawerFilesTouched: "改动文件",
+      drawerGotchas: "踩坑",
+      countDone: "完成",
+      countBlocked: "受阻",
+      countInProgress: "进行中",
+      countReview: "待审",
+      countReady: "就绪",
+      countPending: "等待",
+      countTotal: "共",
+      untitled: "（未命名）",
+      attemptShort: "尝试 {0}",
+      feedPass: "通过 -> {0}：{1}",
+      feedReject: "驳回 -> {0}：{1}",
+      feedPlan: "已规划 {0} 个任务：{1}",
+      feedClaim: "尝试 {0}",
+      feedSubmit: "结果：{0}",
+      feedArbitration: "{0}：{1}",
+      feedStopSentinel: "已响应停止指令",
+      status_done: "完成",
+      status_blocked: "受阻",
+      status_in_progress: "进行中",
+      status_pending_review: "待审",
+      status_disputing: "申辩中",
+      status_pending: "等待",
+      status_ready: "就绪",
+      status_archived: "已归档",
+      outcome_success: "成功",
+      outcome_rejected_by_verifier: "被验收器驳回",
+      outcome_crashed: "崩溃",
+      outcome_timeout: "超时",
+    },
+  };
+
+  function detectDefaultLang() {
+    try {
+      var saved = window.localStorage.getItem("foreman_lang");
+      if (saved === "en" || saved === "zh") return saved;
+    } catch (err) { /* localStorage unavailable */ }
+    var nav = (navigator.language || navigator.userLanguage || "");
+    return nav.indexOf("zh") === 0 ? "zh" : "en";
+  }
+
+  var currentLang = detectDefaultLang();
+
+  function t(key) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    var dict = STRINGS[currentLang] || STRINGS.en;
+    var str = dict[key];
+    if (str === undefined) str = (STRINGS.en[key] !== undefined) ? STRINGS.en[key] : key;
+    args.forEach(function (a, i) {
+      str = str.replace("{" + i + "}", a);
+    });
+    return str;
+  }
+
+  function statusLabel(status) {
+    status = status || "pending";
+    var key = "status_" + status;
+    var dict = STRINGS[currentLang] || STRINGS.en;
+    if (dict[key] !== undefined) return dict[key];
+    return status;
+  }
+
+  function outcomeLabel(outcome) {
+    if (!outcome) return "";
+    var key = "outcome_" + outcome;
+    var dict = STRINGS[currentLang] || STRINGS.en;
+    if (dict[key] !== undefined) return dict[key];
+    return outcome.replace(/_/g, " ");
+  }
+
+  function setLang(lang) {
+    if (lang !== "en" && lang !== "zh") return;
+    currentLang = lang;
+    try { window.localStorage.setItem("foreman_lang", lang); } catch (err) { /* ignore */ }
+    applyStaticTranslations();
+    refreshDynamicText();
+    var btnEn = document.getElementById("lang-btn-en");
+    var btnZh = document.getElementById("lang-btn-zh");
+    if (btnEn) btnEn.classList.toggle("active", lang === "en");
+    if (btnZh) btnZh.classList.toggle("active", lang === "zh");
+  }
+
+  function applyStaticTranslations() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n]"), function (elm) {
+      var key = elm.getAttribute("data-i18n");
+      elm.textContent = t(key);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-placeholder]"), function (elm) {
+      var key = elm.getAttribute("data-i18n-placeholder");
+      elm.setAttribute("placeholder", t(key));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-title]"), function (elm) {
+      var key = elm.getAttribute("data-i18n-title");
+      elm.setAttribute("title", t(key));
+    });
+    var wallEl = document.getElementById("wall");
+    if (wallEl) wallEl.setAttribute("data-empty-text", t("noRunSelected"));
+    var customOptEls = document.querySelectorAll('option[value="__custom__"]');
+    Array.prototype.forEach.call(customOptEls, function (opt) { opt.textContent = t("customOption"); });
+    var blankOptEls = document.querySelectorAll('#template-select option[value=""]');
+    Array.prototype.forEach.call(blankOptEls, function (opt) { opt.textContent = t("blankOption"); });
+  }
+
+  // refreshDynamicText is defined further below, after the render functions exist;
+  // this forward-declared var is assigned there and invoked here via closure.
+  var refreshDynamicText = function () {};
 
   var KNOWN_MODELS_FALLBACK = ["qwen-max", "qwen-plus", "qwen3-coder-plus", "qwen-turbo", "qwen-flash"];
   var DEFAULTS_FALLBACK = { planner: "qwen-max", executor: "qwen3-coder-plus", verifier: "qwen-plus" };
@@ -906,7 +1185,7 @@
         el.demoModeCb.checked = true;
         el.demoModeCb.disabled = true;
         el.demoModeHint.style.display = "block";
-        el.demoModeHint.textContent = "No API key configured — demo mode is locked on. Add DASHSCOPE_API_KEY in .env to run live.";
+        el.demoModeHint.textContent = t("noKeyHint");
       } else {
         el.demoModeCb.disabled = false;
         el.demoModeHint.style.display = "none";
@@ -920,12 +1199,12 @@
     api("/api/templates").then(function (res) {
       if (!res.ok || !res.body) return;
       var list = res.body || [];
-      el.templateSelect.innerHTML = '<option value="">— blank —</option>';
-      list.forEach(function (t) {
+      el.templateSelect.innerHTML = '<option value="">' + escapeHtml(t("blankOption")) + '</option>';
+      list.forEach(function (tpl) {
         var opt = document.createElement("option");
-        opt.value = t.name;
-        opt.textContent = t.name;
-        opt.setAttribute("data-content", t.content || "");
+        opt.value = tpl.name;
+        opt.textContent = tpl.name;
+        opt.setAttribute("data-content", tpl.content || "");
         el.templateSelect.appendChild(opt);
       });
     }).catch(function () {});
@@ -941,7 +1220,7 @@
     });
     var customOpt = document.createElement("option");
     customOpt.value = "__custom__";
-    customOpt.textContent = "custom…";
+    customOpt.textContent = t("customOption");
     selectEl.appendChild(customOpt);
     if (defaultModel && models.indexOf(defaultModel) !== -1) {
       selectEl.value = defaultModel;
@@ -992,13 +1271,13 @@
 
   function renderRunsList(runs) {
     if (!runs.length) {
-      el.runsList.innerHTML = '<div class="runs-empty-hint">No runs yet. Configure a run above and press Start.</div>';
+      el.runsList.innerHTML = '<div class="runs-empty-hint">' + escapeHtml(t("noRunsYet")) + '</div>';
       return;
     }
     el.runsList.innerHTML = runs.map(function (r) {
       var sel = r.run_id === state.runId ? " selected" : "";
       var cost = (r.est_usd !== null && r.est_usd !== undefined) ? fmtUsd(r.est_usd) : "";
-      var mockChip = r.mock ? '<span class="mock-chip">MOCK</span>' : "";
+      var mockChip = r.mock ? '<span class="mock-chip" title="' + escapeHtml(t("mockChipTooltip")) + '">' + escapeHtml(t("mockChip")) + '</span>' : "";
       return (
         '<div class="run-row' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '">' +
           '<span class="dot" style="background:' + statusDotColor(r) + '"></span>' +
@@ -1062,9 +1341,9 @@
 
     var config = detail.config || null;
     var models = (config && config.models) || {};
-    el.rhChipPlanner.textContent = "planner: " + (models.planner || "?");
-    el.rhChipExecutor.textContent = "executor: " + (models.executor || "?");
-    el.rhChipVerifier.textContent = "verifier: " + (models.verifier || "?");
+    el.rhChipPlanner.textContent = t("chipPlanner", models.planner || "?");
+    el.rhChipExecutor.textContent = t("chipExecutor", models.executor || "?");
+    el.rhChipVerifier.textContent = t("chipVerifier", models.verifier || "?");
 
     var isMock = !!(config && config.mock);
     el.rhChipMock.style.display = isMock ? "inline-block" : "none";
@@ -1077,7 +1356,7 @@
       totalTok = (usage.totals.prompt_tokens || 0) + (usage.totals.completion_tokens || 0);
     }
     var costStr = (estUsd !== null && estUsd !== undefined) ? "≈" + fmtUsd(estUsd).replace("$", "$") : "≈$0.0000";
-    el.rhCost.textContent = costStr + " · " + fmtTokens(totalTok) + " tok";
+    el.rhCost.textContent = costStr + " · " + fmtTokens(totalTok) + " " + t("tok");
 
     var active = !!detail.active;
     var complete = !!detail.complete;
@@ -1098,16 +1377,16 @@
   function renderWall(detail) {
     var tasks = detail.tasks || [];
     state.tasksById = {};
-    tasks.forEach(function (t) { state.tasksById[t.task_id] = t; });
+    tasks.forEach(function (task) { state.tasksById[task.task_id] = task; });
 
     el.completeBadge.classList.toggle("show", !!detail.complete);
 
     var c = detail.counts || {};
     el.wallCounts.textContent =
-      "done " + (c.done || 0) + " / blocked " + (c.blocked || 0) +
-      " / in progress " + (c.in_progress || 0) + " / review " + (c.pending_review || 0) +
-      " / ready " + (c.ready || 0) + " / pending " + (c.pending || 0) +
-      "  (" + tasks.length + " total)";
+      t("countDone") + " " + (c.done || 0) + " / " + t("countBlocked") + " " + (c.blocked || 0) +
+      " / " + t("countInProgress") + " " + (c.in_progress || 0) + " / " + t("countReview") + " " + (c.pending_review || 0) +
+      " / " + t("countReady") + " " + (c.ready || 0) + " / " + t("countPending") + " " + (c.pending || 0) +
+      "  (" + tasks.length + " " + t("countTotal") + ")";
 
     if (tasks.length === 0) {
       el.wall.classList.add("empty");
@@ -1116,14 +1395,14 @@
     }
     el.wall.classList.remove("empty");
 
-    el.wall.innerHTML = tasks.map(function (t) {
-      var selected = t.task_id === state.selectedTaskId ? " selected" : "";
-      var status = t.status || "pending";
+    el.wall.innerHTML = tasks.map(function (task) {
+      var selected = task.task_id === state.selectedTaskId ? " selected" : "";
+      var status = task.status || "pending";
       return (
-        '<div class="cell status-' + escapeHtml(status) + selected + '" data-task-id="' + escapeHtml(t.task_id) + '" title="' + escapeHtml(t.title || "") + '">' +
-          '<div class="tid">' + escapeHtml(t.task_id) + '</div>' +
-          '<div class="title">' + escapeHtml(t.title || "(untitled)") + '</div>' +
-          '<div class="meta">' + escapeHtml(status) + (t.attempt_count ? " &middot; attempt " + t.attempt_count : "") + '</div>' +
+        '<div class="cell status-' + escapeHtml(status) + selected + '" data-task-id="' + escapeHtml(task.task_id) + '" title="' + escapeHtml(task.title || "") + '">' +
+          '<div class="tid">' + escapeHtml(task.task_id) + '</div>' +
+          '<div class="title">' + escapeHtml(task.title || t("untitled")) + '</div>' +
+          '<div class="meta">' + escapeHtml(statusLabel(status)) + (task.attempt_count ? " &middot; " + escapeHtml(t("attemptShort", task.attempt_count)) : "") + '</div>' +
         '</div>'
       );
     }).join("");
@@ -1154,11 +1433,11 @@
     events.forEach(function (e) {
       if (e.type === "error") {
         var d = e.detail || {};
-        var msg = d.friendly || d.message || d.error || "An error occurred during the run.";
+        var msg = d.friendly || d.message || d.error || t("genericRunError");
         showErrorBanner(msg);
       }
       if (e.type === "stopped") {
-        showErrorBanner("Run stopped by user.");
+        showErrorBanner(t("runStoppedByUser"));
       }
     });
   }
@@ -1199,28 +1478,28 @@
   function summarizeDetail(e) {
     var d = e.detail || {};
     if (e.type === "verdict") {
-      return (d.passed ? "PASS -> " : "REJECT -> ") + (d.new_status || "") + ": " + (d.reason || "");
+      return d.passed ? t("feedPass", d.new_status || "", d.reason || "") : t("feedReject", d.new_status || "", d.reason || "");
     }
     if (e.type === "plan") {
-      return (d.n_tasks !== undefined ? d.n_tasks : "?") + " tasks planned: " + (d.task_ids || []).join(", ");
+      return t("feedPlan", (d.n_tasks !== undefined ? d.n_tasks : "?"), (d.task_ids || []).join(", "));
     }
     if (e.type === "claim") {
-      return "attempt " + (d.attempt || "?");
+      return t("feedClaim", d.attempt || "?");
     }
     if (e.type === "submit") {
-      return "outcome: " + (d.outcome || "");
+      return t("feedSubmit", d.outcome || "");
     }
     if (e.type === "dispute") {
       return d.rebuttal || safeJson(d);
     }
     if (e.type === "arbitration") {
-      return (d.ruling || "") + ": " + (d.reasoning || "");
+      return t("feedArbitration", d.ruling || "", d.reasoning || "");
     }
     if (e.type === "error") {
       return d.friendly || d.message || d.error || safeJson(d);
     }
     if (e.type === "stopped") {
-      return "stop sentinel honored";
+      return t("feedStopSentinel");
     }
     return safeJson(d);
   }
@@ -1263,26 +1542,26 @@
     el.drawerTitle.textContent = task.title || "";
 
     var html = "";
-    html += '<span class="status-pill status-' + escapeHtml(task.status || "pending") + '">' + escapeHtml(task.status || "pending") + '</span>';
+    html += '<span class="status-pill status-' + escapeHtml(task.status || "pending") + '">' + escapeHtml(statusLabel(task.status)) + '</span>';
 
-    html += '<h3>Description</h3><p class="desc">' + escapeHtml(task.description || "") + '</p>';
+    html += '<h3>' + escapeHtml(t("drawerDescription")) + '</h3><p class="desc">' + escapeHtml(task.description || "") + '</p>';
 
-    html += '<h3>Acceptance Criteria</h3>';
+    html += '<h3>' + escapeHtml(t("drawerAcceptanceCriteria")) + '</h3>';
     if (task.acceptance_criteria && task.acceptance_criteria.length) {
       html += '<ul>' + task.acceptance_criteria.map(function (c) { return '<li>' + escapeHtml(c) + '</li>'; }).join("") + '</ul>';
     } else {
-      html += '<p class="empty-hint">none recorded</p>';
+      html += '<p class="empty-hint">' + escapeHtml(t("drawerNoneRecorded")) + '</p>';
     }
 
     if (task.last_error) {
-      html += '<h3>Latest Feedback</h3><p class="desc">' + escapeHtml(task.last_error) + '</p>';
+      html += '<h3>' + escapeHtml(t("drawerLatestFeedback")) + '</h3><p class="desc">' + escapeHtml(task.last_error) + '</p>';
     }
 
-    html += '<h3>Attempt History (' + (task.attempts ? task.attempts.length : 0) + ')</h3>';
+    html += '<h3>' + escapeHtml(t("drawerAttemptHistory", task.attempts ? task.attempts.length : 0)) + '</h3>';
     if (task.attempts && task.attempts.length) {
       html += task.attempts.slice().reverse().map(renderAttemptCard).join("");
     } else {
-      html += '<p class="empty-hint">no attempts yet</p>';
+      html += '<p class="empty-hint">' + escapeHtml(t("drawerNoAttempts")) + '</p>';
     }
 
     el.drawerBody.innerHTML = html;
@@ -1290,8 +1569,8 @@
 
   function renderAttemptCard(a) {
     var out = '<div class="attempt-card">' +
-      '<div class="attempt-head"><span>Attempt ' + escapeHtml(a.attempt_no) + '</span>' +
-      '<span class="outcome-' + escapeHtml(a.outcome || "") + '">' + escapeHtml((a.outcome || "").replace(/_/g, " ")) + '</span></div>';
+      '<div class="attempt-head"><span>' + escapeHtml(t("drawerAttempt", a.attempt_no)) + '</span>' +
+      '<span class="outcome-' + escapeHtml(a.outcome || "") + '">' + escapeHtml(outcomeLabel(a.outcome)) + '</span></div>';
 
     if (a.verdict) {
       out += '<div class="verdict-text">' + escapeHtml(a.verdict) + '</div>';
@@ -1327,9 +1606,9 @@
     }
 
     var out = "";
-    out += renderHandoffList(parsed.completed_work, "Completed work");
-    out += renderHandoffList(parsed.files_touched, "Files touched");
-    out += renderHandoffList(parsed.gotchas, "Gotchas");
+    out += renderHandoffList(parsed.completed_work, t("drawerCompletedWork"));
+    out += renderHandoffList(parsed.files_touched, t("drawerFilesTouched"));
+    out += renderHandoffList(parsed.gotchas, t("drawerGotchas"));
 
     // Fall back to raw text if none of the expected fields were present/usable.
     if (!out) {
@@ -1367,7 +1646,7 @@
     api("/api/runs/" + encodeURIComponent(state.runId) + "/resume", { method: "POST" }).then(function (res) {
       el.btnResume.disabled = false;
       if (!res.ok) {
-        showErrorBanner((res.body && (res.body.error || res.body.friendly)) || ("Resume failed: HTTP " + res.status));
+        showErrorBanner((res.body && (res.body.error || res.body.friendly)) || t("resumeFailed", res.status));
         return;
       }
       loadRunDetail();
@@ -1382,10 +1661,10 @@
 
   el.btnArchive.addEventListener("click", function () {
     if (!state.runId) return;
-    if (!window.confirm("Archive this run? It will be moved out of the active runs list.")) return;
+    if (!window.confirm(t("archiveConfirm"))) return;
     api("/api/runs/" + encodeURIComponent(state.runId), { method: "DELETE" }).then(function (res) {
       if (!res.ok) {
-        showErrorBanner((res.body && res.body.error) || ("Archive failed: HTTP " + res.status));
+        showErrorBanner((res.body && res.body.error) || t("archiveFailed", res.status));
         return;
       }
       stopDetailPolling();
@@ -1406,13 +1685,13 @@
   el.startBtn.addEventListener("click", function () {
     var requirements = el.checklist.value.trim();
     if (!requirements) {
-      el.statusLine.textContent = "Type a requirements checklist first.";
+      el.statusLine.textContent = t("typeRequirementsFirst");
       el.statusLine.classList.add("error");
       return;
     }
     el.startBtn.disabled = true;
     el.statusLine.classList.remove("error");
-    el.statusLine.textContent = "Starting Foreman...";
+    el.statusLine.textContent = t("startingForeman");
 
     var body = { requirements: requirements };
     var models = {};
@@ -1433,17 +1712,17 @@
       el.startBtn.disabled = false;
       if (!res.ok) {
         el.statusLine.classList.add("error");
-        el.statusLine.textContent = (res.body && (res.body.error || res.body.friendly)) || ("HTTP " + res.status);
+        el.statusLine.textContent = (res.body && (res.body.error || res.body.friendly)) || t("httpError", res.status);
         return;
       }
       el.statusLine.classList.remove("error");
-      el.statusLine.textContent = "Run started: " + res.body.run_id;
+      el.statusLine.textContent = t("runStarted", res.body.run_id);
       refreshRunsList();
       selectRun(res.body.run_id);
     }).catch(function (err) {
       el.startBtn.disabled = false;
       el.statusLine.classList.add("error");
-      el.statusLine.textContent = "Request failed: " + err;
+      el.statusLine.textContent = t("requestFailed", err);
     });
   });
 
@@ -1462,8 +1741,31 @@
   }
   state.clockTimer = setInterval(tickClock, 1000);
 
+  // ---------------- language switch wiring ----------------
+
+  refreshDynamicText = function () {
+    // Re-render everything currently on screen so it reflects the new language.
+    renderRunsList(state.runsCache);
+    if (state.lastDetail) {
+      renderWall(state.lastDetail);
+      renderRunHeader(state.lastDetail);
+    }
+    if (state.selectedTaskId && el.drawer.classList.contains("open")) {
+      openDrawer(state.selectedTaskId);
+    }
+    if (!state.keyPresent && el.demoModeHint.style.display !== "none") {
+      el.demoModeHint.textContent = t("noKeyHint");
+    }
+  };
+
+  var langBtnEn = document.getElementById("lang-btn-en");
+  var langBtnZh = document.getElementById("lang-btn-zh");
+  if (langBtnEn) langBtnEn.addEventListener("click", function () { setLang("en"); });
+  if (langBtnZh) langBtnZh.addEventListener("click", function () { setLang("zh"); });
+
   // ---------------- boot ----------------
 
+  setLang(currentLang);
   loadConfig();
   refreshRunsList();
   state.runsPollTimer = setInterval(refreshRunsList, 3000);
