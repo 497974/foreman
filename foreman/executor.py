@@ -201,6 +201,7 @@ class Executor:
         max_iters: int = 15,
         command_timeout: float = 120.0,
         fallback_models: list[str] | None = None,
+        existing_project: bool = False,
     ):
         self.client = client
         self.model = model
@@ -212,10 +213,25 @@ class Executor:
         # orchestrator; defaults to [] so existing direct construction (tests,
         # mocks) sees no behavior change.
         self.fallback_models = fallback_models or []
+        # Existing-project mode (contract Addendum 4 §14): append one line to
+        # the system prompt rather than replacing it, so the base rules (work
+        # only via tools, no placeholders, run verification, feedback is
+        # authoritative) stay identical. Default False = zero behavior change
+        # for greenfield mode / existing tests.
+        self.existing_project = existing_project
+        self.system_prompt = SYSTEM_PROMPT
+        if existing_project:
+            self.system_prompt = (
+                SYSTEM_PROMPT
+                + "\n\nThis is an EXISTING codebase, not a fresh scaffold — read "
+                "relevant files before editing them, and follow existing "
+                "conventions rather than rewriting things from scratch unless "
+                "the task says to."
+            )
 
     def execute(self, task: Task, dependency_handoffs: list[Handoff]) -> Handoff:
         messages: list[dict] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {"role": "user", "content": _user_message(task, dependency_handoffs)},
         ]
 

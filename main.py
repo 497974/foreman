@@ -17,6 +17,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from foreman.config import Settings
+from foreman.git_safety import GitSafetyError
 from foreman.orchestrator import Orchestrator, status_wall
 
 
@@ -65,6 +66,14 @@ def _build_resume_orchestrator(run_id: str, run_root: str) -> Orchestrator:
     orch.arbiter = Arbiter(orch.client, settings.planner_model, orch.workspace)
     orch.events_path = run_dir / "events.jsonl"
     orch.disputed_task_ids = set()
+    # Existing-project mode (contract Addendum 4 §14): resume_run() itself
+    # self-derives project_dir/branch from run_dir/project_mode.json (and
+    # repoints orch.workspace there) if that file exists — these attributes
+    # just need to exist with a greenfield-safe default before resume_run
+    # runs, since __new__ skips Orchestrator.__init__ entirely here.
+    orch.project_dir = None
+    orch.project_branch = None
+    orch._repo_context = ""
     return orch
 
 
@@ -80,7 +89,25 @@ def main() -> int:
         "so a demo run paces slowly enough to film instead of finishing instantly (default 0)",
     )
     parser.add_argument("--run-root", default="runs", help="directory under which run artifacts are stored")
+    parser.add_argument(
+        "--project-dir", metavar="PATH", default=None,
+        help="existing-project mode: point Foreman at a real git repo instead of a "
+        "fresh sandbox (only valid with --checklist; --resume self-derives this "
+        "from the run's project_mode.json). Requires a clean repo unless "
+        "--force-dirty is also passed.",
+    )
+    parser.add_argument(
+        "--force-dirty", action="store_true",
+        help="existing-project mode: proceed even if the repo has uncommitted "
+        "changes (not recommended; only valid with --checklist).",
+    )
     args = parser.parse_args()
+
+    if args.resume and (args.project_dir or args.force_dirty):
+        raise SystemExit(
+            "--project-dir/--force-dirty are not valid with --resume — resume "
+            "reads project_mode.json automatically."
+        )
 
     if args.resume:
         if args.mock:
@@ -102,6 +129,9 @@ def main() -> int:
         print(f"complete: {summary['complete']}")
         return 0
 
+    if args.mock and (args.project_dir or args.force_dirty):
+        raise SystemExit("--project-dir/--force-dirty are not supported with --mock")
+
     requirements = open(args.checklist, encoding="utf-8").read()
 
     if args.mock:
@@ -114,7 +144,19 @@ def main() -> int:
         orch = build_mock_orchestrator(run_root=args.run_root, delay_s=args.mock_delay)
     else:
         settings = Settings.from_env()
-        orch = Orchestrator(settings, run_root=args.run_root)
+        try:
+            orch = Orchestrator(
+                settings,
+                run_root=args.run_root,
+                project_dir=args.project_dir,
+                force_dirty=args.force_dirty,
+            )
+        except GitSafetyError as e:
+            # Clean one-line error, no traceback — the whole point of
+            # git_safety's actionable messages is that the user reads them,
+            # not a stack trace.
+            print(f"error: {e}")
+            return 1
 
     print(f"Foreman run starting (mock={args.mock}) — run_id={orch.run_id}")
     print("  legend: [#]done [>]running [?]review [X]blocked [ ]ready [.]pending\n")

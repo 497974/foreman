@@ -20,11 +20,12 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from . import llm
+from . import git_safety, llm, repo_context
 from .arbiter import Arbiter, solicit_dispute
 from .backends import make_executor
 from .config import Settings, make_client
 from .dispatcher import Dispatcher
+from .executor import Executor
 from .ledger import Ledger
 from .models import AttemptOutcome, Handoff, Task, TaskStatus
 from .planner import Planner
@@ -92,7 +93,13 @@ def _reconstruct_handoff(task_id: str, attempts: list[dict]) -> Optional[Handoff
 
 
 class Orchestrator:
-    def __init__(self, settings: Settings, run_root: str = "runs"):
+    def __init__(
+        self,
+        settings: Settings,
+        run_root: str = "runs",
+        project_dir: str | Path | None = None,
+        force_dirty: bool = False,
+    ):
         self.settings = settings
         self.client = make_client(settings)
 
@@ -115,18 +122,65 @@ class Orchestrator:
         self.run_dir = run_dir
 
         self.ledger = Ledger(db_path=str(run_dir / "ledger.db"))
-        self.workspace = Workspace(run_dir / "workspace")
         self.dispatcher = Dispatcher(self.ledger)
+        # Set before any possible self._emit() call below (project_mode event
+        # can fire during __init__ itself, in existing-project mode).
+        self.events_path = run_dir / "events.jsonl"
+
+        # Existing-project mode (contract Addendum 4 §14): point the Workspace
+        # at the user's real repo instead of runs/<run_id>/workspace. Ledger
+        # db / events.jsonl / config.json still live under run_dir as always —
+        # only the code workspace itself moves, so Foreman's own bookkeeping
+        # never pollutes the user's repo.
+        self.project_dir: Optional[Path] = None
+        self.project_branch: Optional[str] = None
+        repo_snapshot = ""
+        if project_dir is not None:
+            # Raises GitSafetyError with an actionable message; let it
+            # propagate — the CLI/API layer turns it into a clean user-facing
+            # error rather than a traceback.
+            git_safety.ensure_ready(project_dir, force_dirty)
+
+            self.project_dir = Path(project_dir).resolve()
+            self.project_branch = f"foreman/{self.run_id}"
+            git_safety.create_or_checkout_branch(self.project_dir, self.project_branch)
+
+            self.workspace = Workspace(self.project_dir)
+
+            (run_dir / "project_mode.json").write_text(
+                json.dumps(
+                    {"project_dir": str(self.project_dir), "branch": self.project_branch},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            self._emit(
+                "project_mode",
+                detail={"project_dir": str(self.project_dir), "branch": self.project_branch},
+            )
+
+            repo_snapshot = repo_context.build_repo_snapshot(self.project_dir)
+        else:
+            self.workspace = Workspace(run_dir / "workspace")
 
         self.planner = Planner(self.client, settings.planner_model)
-        self.executor = make_executor(settings, self.workspace, self.client)
+        self._repo_context = repo_snapshot
+        if self.project_dir is not None:
+            # Contract §14 step 7: existing-project runs use the native,
+            # hand-written Executor with existing_project=True (not
+            # make_executor's pluggable backend selection) so the extra
+            # system-prompt line is guaranteed regardless of
+            # FOREMAN_EXECUTOR_BACKEND.
+            self.executor = Executor(
+                self.client, settings.executor_model, self.workspace, existing_project=True
+            )
+        else:
+            self.executor = make_executor(settings, self.workspace, self.client)
         self.verifier = Verifier(self.client, settings.verifier_model, self.workspace)
         # Arbiter uses the planner-tier model (qwen-max) on purpose: it is
         # meant to out-rank both the executor that disputes and the verifier
         # being disputed against (contract §6).
         self.arbiter = Arbiter(self.client, settings.planner_model, self.workspace)
-
-        self.events_path = run_dir / "events.jsonl"
 
         # One dispute per task per run (contract §6). Keyed by task_id, not
         # attempt number, so a task cannot re-litigate a later rejection
@@ -248,7 +302,15 @@ class Orchestrator:
         """
         set_current_run(self.run_id)
         try:
-            tasks = self.planner.plan(requirements)
+            # getattr-guarded: fake-planner test/mocks construct Orchestrator
+            # via __new__ and never set _repo_context; FakePlanner.plan also
+            # does not accept a repo_context kwarg, so skip passing it when
+            # the attribute doesn't exist (greenfield/mock behavior unchanged).
+            repo_context_str = getattr(self, "_repo_context", "")
+            if repo_context_str:
+                tasks = self.planner.plan(requirements, repo_context=repo_context_str)
+            else:
+                tasks = self.planner.plan(requirements)
             self._emit("plan", detail={"n_tasks": len(tasks), "task_ids": [t.task_id for t in tasks]})
 
             return self.run_tasks(requirements, tasks, _tag_thread=False)
@@ -305,12 +367,31 @@ class Orchestrator:
         construct the Orchestrator against that run_id's ledger/workspace
         before calling this; see main.py for the wiring).
 
+        Existing-project mode (contract Addendum 4 §14): BEFORE the Workspace
+        the caller built is used for anything, check for
+        ``run_dir/project_mode.json``. If present, self-derive project_dir/
+        branch from it, repoint ``self.workspace`` at the real repo, and
+        re-run create_or_checkout_branch (idempotent) — this is what lets
+        ``--resume`` work for an existing-project run without the caller
+        re-specifying --project-dir.
+
         Deletes the STOP sentinel (contract §9.3) if present before entering
         the loop — a resumed run should not immediately observe a stale stop
         request left over from whichever earlier process wrote it.
         """
         set_current_run(self.run_id)
         try:
+            project_mode_path = self.run_dir / "project_mode.json"
+            if project_mode_path.is_file():
+                data = json.loads(project_mode_path.read_text(encoding="utf-8"))
+                self.project_dir = Path(data["project_dir"])
+                self.project_branch = data["branch"]
+                git_safety.create_or_checkout_branch(self.project_dir, self.project_branch)
+                self.workspace = Workspace(self.project_dir)
+                self.executor.workspace = self.workspace
+                self.verifier.workspace = self.workspace
+                self.arbiter.workspace = self.workspace
+
             stop_path = self.run_dir / "STOP"
             if stop_path.exists():
                 stop_path.unlink()
@@ -394,6 +475,19 @@ class Orchestrator:
                 passed, reason = self._run_dispute_flow(task, handoff, report)
             else:
                 passed, reason = report.passed, _feedback_reason(report)
+
+            # Existing-project mode (contract Addendum 4 §14): this is the
+            # single point both the plain-verify-pass path and the dispute/
+            # arbitration-overturn path funnel through before record_verdict
+            # — the one true "this task is finalized as a pass" moment. One
+            # commit per task, only on a real pass, never an empty commit
+            # (git_safety.commit_all no-ops if nothing changed).
+            # getattr-guarded: other test suites (tests/test_orchestrator.py,
+            # foreman/mocks.py) build an Orchestrator via __new__ and never
+            # set project_dir at all — those must see a plain no-op here,
+            # exactly as if project_dir had defaulted to None.
+            if getattr(self, "project_dir", None) is not None and passed:
+                git_safety.commit_all(self.project_dir, f"Foreman: {task.task_id} {task.title}")
 
             new_status = self.ledger.record_verdict(task.task_id, passed=passed, reason=reason)
             self._emit(

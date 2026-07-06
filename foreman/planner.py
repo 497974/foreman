@@ -86,8 +86,21 @@ class Planner:
         self.client = client
         self.model = model
 
-    def plan(self, requirements: str) -> list[Task]:
+    def plan(self, requirements: str, repo_context: str = "") -> list[Task]:
         user = f"Requirements checklist:\n\n{requirements}"
+        if repo_context:
+            # Existing-project mode (contract Addendum 4 §14): orient the
+            # planner with a snapshot of the real repo so tasks respect its
+            # existing structure/conventions instead of recreating files that
+            # already serve the same purpose. Default "" (greenfield) leaves
+            # `user` byte-for-byte identical to before this parameter existed.
+            user += (
+                "\n\n## Existing project context\n"
+                "This checklist targets an EXISTING codebase, not a fresh "
+                "scaffold. Tasks should respect its existing structure and "
+                "conventions, and must not recreate files that already serve "
+                "the same purpose.\n\n" + repo_context
+            )
         last_err = ""
         for _ in range(self.MAX_PLAN_RETRIES + 1):
             data = chat_json(
