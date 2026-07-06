@@ -97,6 +97,26 @@ _DENY_PATTERNS: list[tuple[str, str]] = [
         "git push (would let sandboxed work escape upstream)",
         r"\bgit\b\s+push\b",
     ),
+    # In existing-project mode the workspace IS the user's real repo, so these
+    # git subcommands can move HEAD off Foreman's isolated branch or destroy
+    # the user's committed/uncommitted work — block them outright (Foreman's
+    # own per-task commits go through git_safety, not the executor's shell).
+    (
+        "git reset --hard (discards work / rewrites history destructively)",
+        r"\bgit\b\s+reset\b[^\n]*--hard\b",
+    ),
+    (
+        "git clean -f/-d (deletes untracked files, including the user's)",
+        r"\bgit\b\s+clean\b[^\n]*-[a-zA-Z]*[fdx]",
+    ),
+    (
+        "git checkout/switch of a branch (would escape Foreman's isolated branch)",
+        r"\bgit\b\s+(checkout|switch)\b\s+(-[a-zA-Z]+\s+)*[^\s.-]",
+    ),
+    (
+        "git branch -D / -M (force-delete or move branches)",
+        r"\bgit\b\s+branch\b[^\n]*\s-[a-zA-Z]*[DM]",
+    ),
     (
         "registry edit on HKLM",
         r"\breg\b\s+(add|delete)\b.*\bHKLM\b",

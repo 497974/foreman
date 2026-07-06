@@ -16,6 +16,15 @@ happens on disk, and the escape hatch for a dirty tree.
   start. Foreman refuses a dirty tree by default — see
   [Force-dirty escape hatch](#force-dirty-escape-hatch-not-recommended) below
   if you really want to proceed anyway.
+- **No merge/rebase/cherry-pick may be in progress.** A repo mid-operation is
+  rejected outright — and unlike the dirty-tree check, `--force-dirty` does
+  NOT override this. Branching off a conflicted merge would commit raw
+  conflict markers and leave git's merge machinery in a corrupted state;
+  finish or abort the operation first.
+- **One Foreman run per repo at a time.** A lock file
+  (`.git/foreman.lock`) serializes runs; a second run against the same repo
+  fails with a message naming the holder. If a run crashed and left a stale
+  lock, the message tells you exactly which file to delete.
 
 None of this is enforced client-side for its own sake — it is enforced by
 `foreman/git_safety.py` on the machine actually running Foreman, because that
@@ -57,8 +66,12 @@ run is writing to.
 
 ## What happens
 
-1. Foreman checks out (creating if needed) an isolated branch named
-   **`foreman/<run_id>`** — your current branch is left exactly where it was.
+1. Foreman creates an isolated branch named **`foreman/<run_id>`** — your
+   current branch is left exactly where it was. If a branch by that exact
+   name somehow already exists (a leftover from a wedged earlier process, or
+   your own naming collision), Foreman refuses rather than committing on top
+   of history it didn't create; only a `--resume` of the same run re-uses its
+   own branch.
 2. The Planner is given a short snapshot of your repo (directory tree +
    README/package.json/requirements.txt/etc. previews) so it plans tasks that
    respect your existing structure instead of recreating things that already
@@ -67,7 +80,10 @@ run is writing to.
 3. Every task that passes verification (directly, or after a dispute is
    overturned) gets **its own commit** on the `foreman/<run_id>` branch,
    message `Foreman: <task_id> <task title>`. A task that touches nothing
-   real produces no empty commit.
+   real produces no empty commit. If a checkpoint commit itself fails at the
+   host level (disk full, permissions), the task's earned DONE is **not**
+   unwound — a `checkpoint_failed` event is emitted instead; if you see one
+   in the console/events, check `git log`/`git status` on the branch by hand.
 4. Foreman's own bookkeeping (ledger, events, run config) still lives under
    `runs/<run_id>/` as always — it never pollutes your repo. Only the code
    workspace itself is your repo.
@@ -85,10 +101,14 @@ run is writing to.
 ## Force-dirty escape hatch (not recommended)
 
 Passing `--force-dirty` (CLI) or `"force_dirty": true` (API body) lets Foreman
-proceed against a repo with uncommitted changes instead of refusing. This
-exists for the rare case where you're certain the dirty state is fine to mix
-with Foreman's commits — but it means Foreman's first per-task commit will
-also capture whatever was already sitting in your working tree, uncommitted
-and unreviewed, as part of that commit. **Commit or stash first if you have
-any doubt.** There is no equivalent "just trust me" flag for the repo-root or
-git-repository checks — those are not overridable, by design.
+proceed against a repo with uncommitted changes instead of refusing. Your
+pre-existing uncommitted work is then committed **immediately, as its own
+clearly-labeled snapshot commit** at the foreman branch tip (message:
+`Foreman: snapshot of pre-existing uncommitted changes (present before this
+run started; not authored by Foreman)`) — it is never folded into a task's
+checkpoint commit, so `git log`/`git blame` never attribute your own code to
+an AI-authored task. It still means uncommitted, unreviewed work gets
+committed on the foreman branch, so: **commit or stash first if you have any
+doubt.** There is no equivalent "just trust me" flag for the repo-root,
+git-repository, or merge-in-progress checks — those are not overridable, by
+design.

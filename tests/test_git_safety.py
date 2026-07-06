@@ -18,11 +18,14 @@ import pytest
 
 from foreman.git_safety import (
     GitSafetyError,
+    acquire_lock,
     commit_all,
     create_or_checkout_branch,
     ensure_ready,
+    in_progress_operation,
     is_clean,
     is_git_repo,
+    release_lock,
     repo_root,
 )
 
@@ -113,18 +116,109 @@ def test_create_or_checkout_branch_creates_new_branch(tmp_path):
     assert current == "foreman/run_abc123"
 
 
-def test_create_or_checkout_branch_is_idempotent(tmp_path):
+def test_create_or_checkout_branch_resume_is_idempotent(tmp_path):
     repo = _init_repo_with_commit(tmp_path / "repo")
     create_or_checkout_branch(repo, "foreman/run_abc123")
-    # Call again while already on the branch — must re-check-out the same
-    # branch idempotently without error (this is what makes --resume safe to
-    # call repeatedly).
-    create_or_checkout_branch(repo, "foreman/run_abc123")
+    # Resume path: the branch exists from the first pass, allow_existing=True
+    # must re-check-out the same branch idempotently without error (this is
+    # what makes --resume safe to call repeatedly).
+    create_or_checkout_branch(repo, "foreman/run_abc123", allow_existing=True)
     current = _git(repo, "branch", "--show-current").stdout.strip()
     assert current == "foreman/run_abc123"
     # branch --list shows exactly one match, not a duplicate/error state
     listing = _git(repo, "branch", "--list", "foreman/run_abc123").stdout
     assert listing.count("foreman/run_abc123") == 1
+
+
+def test_create_or_checkout_branch_rejects_preexisting_branch_on_first_pass(tmp_path):
+    """A branch already named foreman/<run_id> was NOT created by this run
+    (run_ids are freshly minted) — silently reusing it would commit on top of
+    history Foreman does not own while still claiming 'isolated branch'."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    _git(repo, "branch", "foreman/run_abc123")  # someone else's leftover
+    with pytest.raises(GitSafetyError, match="already exists"):
+        create_or_checkout_branch(repo, "foreman/run_abc123")
+    # and HEAD did not move off the user's branch
+    assert _current_branch(repo) in ("master", "main")
+
+
+def test_create_or_checkout_branch_recreates_deleted_branch_on_resume(tmp_path):
+    """Resume with allow_existing=True where the user deleted the branch in
+    between: recreate it from current HEAD rather than failing the resume."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    create_or_checkout_branch(repo, "foreman/run_gone", allow_existing=True)
+    assert _current_branch(repo) == "foreman/run_gone"
+
+
+def test_create_or_checkout_branch_works_from_detached_head(tmp_path):
+    """Detached HEAD at start is an accepted state — branch creation from the
+    detached commit must land on the new branch. Pinned by a test so a future
+    refactor can't silently regress what today is only incidental correctness."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "checkout", "--detach", sha)
+    create_or_checkout_branch(repo, "foreman/run_detached")
+    assert _current_branch(repo) == "foreman/run_detached"
+
+
+def test_create_or_checkout_branch_raises_when_checkout_fails(tmp_path, monkeypatch):
+    """The whole safety promise hinges on the checkout succeeding — a silently
+    failed checkout would leave HEAD on the user's branch, which would then
+    receive Foreman's commits. Simulate a checkout that reports failure and
+    confirm we raise GitSafetyError instead of proceeding."""
+    import foreman.git_safety as gs
+
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    real_run_git = gs._run_git
+
+    def fake_run_git(path, args):
+        if args[:1] == ["checkout"]:
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="fatal: checkout blocked")
+        return real_run_git(path, args)
+
+    monkeypatch.setattr(gs, "_run_git", fake_run_git)
+    with pytest.raises(GitSafetyError, match="isolated Foreman branch"):
+        create_or_checkout_branch(repo, "foreman/run_xyz")
+
+
+def test_create_or_checkout_branch_raises_when_head_not_on_branch(tmp_path, monkeypatch):
+    """Defense in depth: even if checkout reports success, we verify HEAD
+    actually moved. Simulate checkout 'succeeding' but HEAD staying put."""
+    import foreman.git_safety as gs
+
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    original = _current_branch(repo)
+    real_run_git = gs._run_git
+
+    def fake_run_git(path, args):
+        if args[:1] == ["checkout"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")  # lies: says ok, does nothing
+        return real_run_git(path, args)
+
+    monkeypatch.setattr(gs, "_run_git", fake_run_git)
+    with pytest.raises(GitSafetyError, match=f"HEAD is on '{original}'"):
+        create_or_checkout_branch(repo, "foreman/run_xyz")
+
+
+def test_commit_all_refuses_to_commit_on_wrong_branch(tmp_path):
+    """The final backstop: commit_all with expected_branch must refuse to
+    commit if HEAD is on a different (e.g. the user's main) branch, even when
+    there are real staged changes — this is what guarantees Foreman never
+    commits to the user's branch no matter what moved HEAD."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    original = _current_branch(repo)  # user is on master/main
+    (repo / "feature.py").write_text("x = 1\n", encoding="utf-8")
+
+    with pytest.raises(GitSafetyError, match="refusing to commit"):
+        commit_all(repo, "Foreman: T01 x", expected_branch="foreman/run_notcheckedout")
+
+    # And critically: the user's branch got ZERO new commits from that attempt.
+    log = _git(repo, "log", "--oneline", original).stdout.strip().splitlines()
+    assert len(log) == 1
+
+
+def _current_branch(path):
+    return _git(path, "branch", "--show-current").stdout.strip()
 
 
 # ---- commit_all -----------------------------------------------------------
@@ -229,3 +323,101 @@ def test_ensure_ready_passes_for_dirty_repo_with_force_dirty(tmp_path):
     repo = _init_repo_with_commit(tmp_path / "repo")
     (repo / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
     ensure_ready(repo, force_dirty=True)  # must not raise
+
+
+def test_ensure_ready_rejects_bare_repo_with_actionable_message(tmp_path):
+    """A bare repo has no work tree — is_git_repo's --is-inside-work-tree
+    check rejects it via the ordinary 'not a git repository' branch. Asserted
+    (not assumed) so the message stays sensible rather than a raw git error."""
+    bare = tmp_path / "bare.git"
+    bare.mkdir()
+    subprocess.run(["git", "init", "--bare", str(bare)], capture_output=True, check=True)
+    with pytest.raises(GitSafetyError, match="git init"):
+        ensure_ready(bare)
+
+
+# ---- in-progress operations (merge/rebase/cherry-pick) ------------------------
+
+
+def _make_conflicted_merge(tmp_path):
+    """A REAL mid-merge repo: two branches editing the same line, merge fails
+    and leaves MERGE_HEAD + conflict markers behind."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    (repo / "shared.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "base")
+    _git(repo, "checkout", "-b", "feat")
+    (repo / "shared.txt").write_text("feat version\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "feat edit")
+    _git(repo, "checkout", "-")
+    (repo / "shared.txt").write_text("main version\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "main edit")
+    merge = subprocess.run(
+        ["git", "-C", str(repo), "merge", "feat"],
+        capture_output=True, encoding="utf-8", errors="replace", check=False,
+    )
+    assert merge.returncode != 0  # the conflict is the point
+    return repo
+
+
+def test_in_progress_operation_detects_real_merge_conflict(tmp_path):
+    repo = _make_conflicted_merge(tmp_path)
+    assert in_progress_operation(repo) == "merge"
+
+
+def test_in_progress_operation_none_for_repo_at_rest(tmp_path):
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    assert in_progress_operation(repo) is None
+
+
+def test_ensure_ready_rejects_mid_merge_even_with_force_dirty(tmp_path):
+    """The force_dirty escape hatch must NOT extend to a repo mid-surgery:
+    branching off a conflicted merge would commit raw conflict markers and
+    leave .git's merge machinery dangling against a no-longer-checked-out
+    branch. Non-overridable, same tier as 'not a repo at all'."""
+    repo = _make_conflicted_merge(tmp_path)
+    with pytest.raises(GitSafetyError, match="merge in progress"):
+        ensure_ready(repo, force_dirty=True)
+
+
+def test_ensure_ready_rejects_mid_rebase(tmp_path):
+    """rebase-merge is a directory marker (not a file like MERGE_HEAD);
+    simulated directly rather than via a real rebase for determinism."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    (repo / ".git" / "rebase-merge").mkdir()
+    with pytest.raises(GitSafetyError, match="rebase in progress"):
+        ensure_ready(repo, force_dirty=True)
+
+
+# ---- run lock -----------------------------------------------------------------
+
+
+def test_acquire_lock_blocks_a_second_run(tmp_path):
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    acquire_lock(repo, "run_first")
+    with pytest.raises(GitSafetyError, match="another Foreman run"):
+        acquire_lock(repo, "run_second")
+
+
+def test_acquire_lock_reentrant_for_same_run_id(tmp_path):
+    """A resume after a crash finds its OWN stale lock and proceeds."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    acquire_lock(repo, "run_same")
+    acquire_lock(repo, "run_same")  # must not raise
+
+
+def test_release_lock_frees_the_repo_for_the_next_run(tmp_path):
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    acquire_lock(repo, "run_first")
+    release_lock(repo, "run_first")
+    acquire_lock(repo, "run_second")  # must not raise
+
+
+def test_release_lock_never_releases_someone_elses_lock(tmp_path):
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    acquire_lock(repo, "run_first")
+    release_lock(repo, "run_other")  # no-op, and must not raise
+    with pytest.raises(GitSafetyError, match="run_first"):
+        acquire_lock(repo, "run_second")

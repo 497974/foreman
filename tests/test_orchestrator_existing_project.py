@@ -229,6 +229,74 @@ def test_dirty_repo_raises_git_safety_error_without_force_dirty(tmp_path):
         _build_orchestrator(tmp_path, project_dir=str(repo))
 
 
+def test_force_dirty_snapshots_preexisting_work_as_a_separate_commit(tmp_path):
+    """Under --force-dirty the user's uncommitted work must land in its own
+    clearly-labeled snapshot commit at the foreman branch tip — NOT be folded
+    into the first AI-authored task checkpoint, where git blame/log would
+    attribute the user's own code to Foreman's task."""
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    (repo / "users_wip.py").write_text("user_work = True\n", encoding="utf-8")
+
+    orch = _build_orchestrator(tmp_path, project_dir=str(repo), force_dirty=True)
+    orch.run_checklist("Add foo() to util.py")
+
+    log = _git(repo, "log", "--format=%s", f"foreman/{orch.run_id}").stdout.splitlines()
+    # newest first: [task checkpoint, snapshot, initial commit]
+    assert len(log) == 3
+    assert "pre-existing" in log[1]
+    assert "Foreman: T1" in log[0]
+
+    # The snapshot commit contains the user's file; the task commit does not.
+    snapshot_files = _git(repo, "show", "--name-only", "--format=", "HEAD~1").stdout
+    assert "users_wip.py" in snapshot_files
+    task_files = _git(repo, "show", "--name-only", "--format=", "HEAD").stdout
+    assert "users_wip.py" not in task_files
+
+
+def test_preexisting_foreman_branch_makes_init_refuse(tmp_path):
+    """__init__ must refuse (GitSafetyError) if a branch named exactly
+    foreman/<this run_id> already exists — Foreman never commits on top of a
+    branch it did not create. Simulated by pre-creating branches for every
+    plausible id via monkeypatching new_id would be brittle; instead exercise
+    git_safety's contract through a direct second orchestrator scenario is
+    impossible (fresh run_id each time), so pin the underlying refusal at the
+    git_safety layer here with the orchestrator's exact branch-name shape."""
+    from foreman.git_safety import GitSafetyError, create_or_checkout_branch
+
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    _git(repo, "branch", "foreman/run_deadbeef")
+    with pytest.raises(GitSafetyError, match="already exists"):
+        create_or_checkout_branch(repo, "foreman/run_deadbeef")
+
+
+def test_two_concurrent_runs_on_same_repo_second_is_refused(tmp_path):
+    """Two live Orchestrators against one repo would race checkout/commit on
+    a single shared working tree; the second construction must fail loudly."""
+    from foreman.git_safety import GitSafetyError
+
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    first = _build_orchestrator(tmp_path, project_dir=str(repo))
+    assert first.project_dir is not None  # holds the lock now
+    with pytest.raises(GitSafetyError, match="another Foreman run"):
+        _build_orchestrator(tmp_path, project_dir=str(repo))
+
+
+def test_run_root_inside_project_dir_is_refused_with_accurate_message(tmp_path):
+    """--run-root inside the repo would sweep Foreman's ledger.db into the
+    user's checkpoint commits via `git add -A`. Must fail naming the actual
+    cause (run directory location), not the dirty-tree symptom that creating
+    run_dir causes."""
+    from foreman.git_safety import GitSafetyError
+
+    repo = _init_repo_with_commit(tmp_path / "repo")
+    with pytest.raises(GitSafetyError, match="run directory"):
+        Orchestrator(
+            FakeSettings(),
+            run_root=str(repo / "runs"),
+            project_dir=str(repo),
+        )
+
+
 def test_resume_run_rederives_project_dir_and_branch(tmp_path):
     """After a first pass with project_dir set, a resume_run() call on a
     freshly-constructed (greenfield-looking) Orchestrator must self-derive

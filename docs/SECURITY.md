@@ -22,7 +22,13 @@ doesn't.
   `rm -rf` / `del /s /q` / `rd /s` on absolute paths, `format`, `mkfs`,
   `shutdown`/`reboot`, `reg add|delete` on `HKLM`, `diskpart`, `cipher /w`,
   redirecting into `C:\Windows`, and PowerShell `Remove-Item -Recurse` on
-  absolute paths. It is a DENY list, not an ALLOW list — it targets the
+  absolute paths. For **existing-project mode** — where the workspace IS the
+  user's real repo — it additionally blocks the git subcommands that would
+  destroy the user's work or move HEAD off Foreman's isolated branch:
+  `git push`, `git reset --hard`, `git clean -f/-d/-x`, `git checkout <branch>`
+  / `git switch <branch>` (a single-file revert `git checkout -- file` still
+  passes), and `git branch -D/-M`. It is a DENY list, not an ALLOW list — it
+  targets the
   *theme* (whole-disk destruction, system state changes, absolute-path
   writes/deletes outside the workspace), not every dangerous flag
   combination. Ordinary relative commands (`pytest`, `python`, `pip

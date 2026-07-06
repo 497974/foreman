@@ -136,14 +136,69 @@ class Orchestrator:
         self.project_branch: Optional[str] = None
         repo_snapshot = ""
         if project_dir is not None:
+            resolved_project = Path(project_dir).resolve()
+
+            # Foreman's own run artifacts (the SQLite ledger, events.jsonl,
+            # workspace bookkeeping) live under run_dir. If run_dir happens to
+            # sit INSIDE the user's repo — e.g. they ran with the default
+            # --run-root=runs while their cwd was the repo — then commit_all's
+            # `git add -A` would sweep Foreman's internal files (including a
+            # binary .db) into the user's checkpoint commits. Refuse that
+            # outright with an actionable message rather than silently polluting
+            # their history.
+            #
+            # This check runs BEFORE ensure_ready on purpose: creating run_dir
+            # a few lines above already wrote files under the repo, so the tree
+            # is now dirty. If we let ensure_ready run first it would fail with
+            # the misleading "repo has uncommitted changes" (a symptom we
+            # caused), burying the real cause. Naming the actual problem —
+            # run_dir location — is the actionable message.
+            try:
+                self.run_dir.resolve().relative_to(resolved_project)
+                inside = True
+            except ValueError:
+                inside = False
+            if inside:
+                raise git_safety.GitSafetyError(
+                    f"Foreman's run directory ({self.run_dir}) is inside the "
+                    f"target project ({resolved_project}); that would commit "
+                    "Foreman's own files into your repo. Re-run with a "
+                    "--run-root outside the project (or from a different "
+                    "working directory)."
+                )
+
             # Raises GitSafetyError with an actionable message; let it
             # propagate — the CLI/API layer turns it into a clean user-facing
             # error rather than a traceback.
             git_safety.ensure_ready(project_dir, force_dirty)
 
-            self.project_dir = Path(project_dir).resolve()
+            self.project_dir = resolved_project
+
+            # Serialize runs against this repo: two concurrent runs would race
+            # checkout/commit on one shared working tree (released in
+            # run_checklist/resume_run's finally).
+            git_safety.acquire_lock(self.project_dir, self.run_id)
+
+            # Snapshot the dirty flag BEFORE the checkout: `checkout -b`
+            # carries uncommitted changes onto the new branch, and we want the
+            # user's pre-existing work committed SEPARATELY from anything a
+            # task later writes — one clearly-labeled commit at the branch
+            # tip, so `git log`/`git blame` never attributes the user's own
+            # code to an AI-authored task checkpoint.
+            had_dirty_tree = force_dirty and not git_safety.is_clean(self.project_dir)
+
             self.project_branch = f"foreman/{self.run_id}"
             git_safety.create_or_checkout_branch(self.project_dir, self.project_branch)
+
+            if had_dirty_tree:
+                snapshotted = git_safety.commit_all(
+                    self.project_dir,
+                    "Foreman: snapshot of pre-existing uncommitted changes "
+                    "(present before this run started; not authored by Foreman)",
+                    expected_branch=self.project_branch,
+                )
+                if snapshotted:
+                    self._emit("preexisting_snapshot", detail={"branch": self.project_branch})
 
             self.workspace = Workspace(self.project_dir)
 
@@ -349,6 +404,10 @@ class Orchestrator:
             self.ledger.add_tasks(tasks)
             return self._drive_loop()
         finally:
+            # getattr-guarded like _repo_context: __new__-built test/resume
+            # orchestrators may not have run the project_dir wiring at all.
+            if getattr(self, "project_dir", None) is not None:
+                git_safety.release_lock(self.project_dir, self.run_id)
             if _tag_thread:
                 set_current_run(None)
 
@@ -386,7 +445,25 @@ class Orchestrator:
                 data = json.loads(project_mode_path.read_text(encoding="utf-8"))
                 self.project_dir = Path(data["project_dir"])
                 self.project_branch = data["branch"]
-                git_safety.create_or_checkout_branch(self.project_dir, self.project_branch)
+                # Re-assert the safety invariants, not just the plumbing: the
+                # repo may have changed hands between the first pass and this
+                # resume. A merge/rebase the user started in the meantime is
+                # as unsafe now as it would have been at first-run time.
+                # (Cleanliness is deliberately NOT re-checked: a crash mid-task
+                # legitimately leaves Foreman's own uncommitted work behind,
+                # and that in-flight state must survive the resume.)
+                operation = git_safety.in_progress_operation(self.project_dir)
+                if operation is not None:
+                    raise git_safety.GitSafetyError(
+                        f"cannot resume: the repo has a {operation} in progress "
+                        f"— finish or abort it first (git {operation} --abort)."
+                    )
+                git_safety.acquire_lock(self.project_dir, self.run_id)
+                # allow_existing: the branch normally survives from the first
+                # pass (checked out); if the user deleted it, it is recreated.
+                git_safety.create_or_checkout_branch(
+                    self.project_dir, self.project_branch, allow_existing=True
+                )
                 self.workspace = Workspace(self.project_dir)
                 self.executor.workspace = self.workspace
                 self.verifier.workspace = self.workspace
@@ -403,6 +480,8 @@ class Orchestrator:
 
             return self._drive_loop()
         finally:
+            if getattr(self, "project_dir", None) is not None:
+                git_safety.release_lock(self.project_dir, self.run_id)
             set_current_run(None)
 
     def _drive_loop(self) -> dict:
@@ -494,7 +573,11 @@ class Orchestrator:
                 # already-earned DONE: that would make the code disappear from
                 # the ledger's view while it still sits, unrecorded, on disk.
                 try:
-                    git_safety.commit_all(self.project_dir, f"Foreman: {task.task_id} {task.title}")
+                    git_safety.commit_all(
+                        self.project_dir,
+                        f"Foreman: {task.task_id} {task.title}",
+                        expected_branch=self.project_branch,
+                    )
                 except git_safety.GitSafetyError as exc:
                     self._emit(
                         "checkpoint_failed",

@@ -35,6 +35,15 @@ DANGEROUS = [
     "taskkill /f /im explorer.exe",
     "del /s /q C:\\Windows\\System32",
     "netsh interface set x",
+    # existing-project mode: the workspace is the user's real repo, so these
+    # git subcommands (which move HEAD off Foreman's branch or destroy work)
+    # must be blocked
+    "git reset --hard HEAD~3",
+    "git clean -fdx",
+    "git checkout main",
+    "git checkout -b sneaky",
+    "git switch develop",
+    "git branch -D foreman/run_x",
 ]
 
 # Ordinary dev commands that must NEVER be blocked (false-positive guard).
@@ -45,6 +54,10 @@ BENIGN = [
     "npm install",
     "git add -A",
     'git commit -m "done"',
+    "git checkout -- app.py",   # reverting one file is fine (not a branch switch)
+    "git clean -n",             # dry-run listing is fine
+    "git status",
+    "git diff",
     "mkdir build",
     "echo hello world",
     "ls -la",

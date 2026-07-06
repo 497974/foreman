@@ -71,27 +71,126 @@ def is_clean(path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == ""
 
 
-def create_or_checkout_branch(path, branch: str) -> None:
-    """Create `branch` if it does not exist yet, else just check it out.
+def current_branch(path) -> Optional[str]:
+    """The checked-out branch name, or None if detached / not determinable.
 
-    Idempotent by design: resume_run calls this again on every resume, and it
-    must be a no-op (aside from switching HEAD) when the branch already exists
-    from the run's first pass.
+    `git rev-parse --abbrev-ref HEAD` prints the branch name, or the literal
+    "HEAD" when in detached-HEAD state — which we normalize to None so callers
+    can treat "not on any named branch" uniformly.
+    """
+    result = _run_git(path, ["rev-parse", "--abbrev-ref", "HEAD"])
+    if result.returncode != 0:
+        return None
+    name = result.stdout.strip()
+    return None if (not name or name == "HEAD") else name
+
+
+def in_progress_operation(path) -> Optional[str]:
+    """The name of any git operation currently mid-flight ("merge", "rebase",
+    "cherry-pick", "revert", "bisect"), or None if the repo is at rest.
+
+    A repo stuck mid-rebase/merge is NOT a safe target even under force_dirty:
+    `git checkout -b` from that state succeeds, the conflict markers in the
+    tree would get committed as-is by commit_all, and the rebase machinery
+    (.git/rebase-merge) is left dangling against a branch that is no longer
+    checked out — a corrupted, hard-to-recover state. ensure_ready treats this
+    as non-overridable, same tier as "not a repo at all".
+
+    Marker paths are resolved via `git rev-parse --git-path` rather than
+    assuming `<repo>/.git/<marker>` — .git can be a FILE (worktrees,
+    submodules) pointing at the real git dir elsewhere.
+    """
+    markers = [
+        ("MERGE_HEAD", "merge"),
+        ("rebase-merge", "rebase"),
+        ("rebase-apply", "rebase"),
+        ("CHERRY_PICK_HEAD", "cherry-pick"),
+        ("REVERT_HEAD", "revert"),
+        ("BISECT_LOG", "bisect"),
+    ]
+    for marker, name in markers:
+        result = _run_git(path, ["rev-parse", "--git-path", marker])
+        if result.returncode != 0:
+            continue
+        marker_path = Path(result.stdout.strip())
+        if not marker_path.is_absolute():
+            marker_path = Path(path) / marker_path
+        if marker_path.exists():
+            return name
+    return None
+
+
+def create_or_checkout_branch(path, branch: str, allow_existing: bool = False) -> None:
+    """Create `branch` and VERIFY we actually landed on it.
+
+    ``allow_existing`` splits the two legitimate call sites:
+
+    - First pass of a run (allow_existing=False, the default): the branch must
+      NOT already exist. run_ids are freshly minted, so a pre-existing branch
+      with this exact name was made by something else — a leftover from a
+      wedged earlier process, or the user's own branch that happens to match.
+      Silently checking it out would put Foreman's commits on top of history
+      it does not own, while still claiming "isolated branch". Refuse instead.
+    - Resume (allow_existing=True): the branch SHOULD already exist from the
+      run's first pass — check it out; if the user deleted it in between,
+      recreate it from current HEAD (same as a first pass would).
+
+    Critically: a git checkout can FAIL (an in-progress rebase/merge, an
+    unmergeable dirty tree under force_dirty, a filesystem error). The entire
+    safety promise — "commits only ever land on the isolated foreman branch,
+    never the user's main branch" — hinges on this checkout succeeding. So we
+    check the command's exit code AND confirm HEAD is now on `branch`
+    afterwards; either failing raises GitSafetyError rather than silently
+    leaving HEAD on whatever branch the user was on (which would then receive
+    Foreman's commits).
     """
     listing = _run_git(path, ["branch", "--list", branch])
     if listing.stdout.strip():
-        _run_git(path, ["checkout", branch])
+        if not allow_existing:
+            raise GitSafetyError(
+                f"a branch named '{branch}' already exists in this repo. "
+                "Foreman only ever commits to a branch it created itself for "
+                "this exact run — a pre-existing branch by this name means a "
+                "leftover from an earlier process or a naming collision with "
+                "your own work. Delete or rename that branch (git branch -m "
+                f"{branch} <something-else>) and re-run."
+            )
+        result = _run_git(path, ["checkout", branch])
     else:
-        _run_git(path, ["checkout", "-b", branch])
+        result = _run_git(path, ["checkout", "-b", branch])
+
+    if result.returncode != 0:
+        raise GitSafetyError(
+            f"could not switch to the isolated Foreman branch '{branch}' "
+            f"(git said: {result.stderr.strip() or result.stdout.strip()}). "
+            "Foreman refuses to proceed rather than risk committing to your "
+            "current branch — resolve the repo state (e.g. finish/abort any "
+            "in-progress merge or rebase) and try again."
+        )
+
+    landed = current_branch(path)
+    if landed != branch:
+        raise GitSafetyError(
+            f"expected to be on Foreman branch '{branch}' after checkout but "
+            f"HEAD is on '{landed}'. Foreman refuses to proceed to avoid "
+            "committing to the wrong branch."
+        )
 
 
-def commit_all(path, message: str) -> bool:
+def commit_all(path, message: str, expected_branch: Optional[str] = None) -> bool:
     """Stage everything and commit if (and only if) something is staged.
 
     Returns True if a commit was made, False if there was nothing to commit —
     never makes an --allow-empty commit (a task that touched nothing real,
     e.g. a no-op verification-only retry, must not pollute the branch history
     with empty commits).
+
+    ``expected_branch`` is the final safety backstop: if given, this refuses to
+    commit unless HEAD is actually on that branch. create_or_checkout_branch
+    already verifies the checkout, but this is defense in depth — the one
+    guarantee the whole feature sells is "never commit to the user's branch",
+    so the commit itself double-checks rather than trusting that nothing moved
+    HEAD between checkout and here.
 
     The commit is made with an explicit, hard-coded author identity
     (-c user.name/user.email on the commit invocation only — this never reads
@@ -107,6 +206,14 @@ def commit_all(path, message: str) -> bool:
     the commit itself still fails for some other reason — a real failure at
     this point must be loud, never swallowed as if it were a no-op.
     """
+    if expected_branch is not None:
+        on = current_branch(path)
+        if on != expected_branch:
+            raise GitSafetyError(
+                f"refusing to commit: expected to be on '{expected_branch}' but "
+                f"HEAD is on '{on}'. Foreman never commits to a branch other "
+                "than its own isolated run branch."
+            )
     _run_git(path, ["add", "-A"])
     diff = _run_git(path, ["diff", "--cached", "--quiet"])
     if diff.returncode == 0:
@@ -147,8 +254,75 @@ def ensure_ready(path, force_dirty: bool = False) -> None:
             "— this avoids partial-repo commits."
         )
 
+    # Deliberately checked BEFORE (and regardless of) force_dirty: an
+    # in-progress merge/rebase is not "dirty", it is a repo mid-surgery.
+    # Branching off it and committing would bake unresolved conflict markers
+    # into history and leave the rebase machinery dangling.
+    operation = in_progress_operation(path)
+    if operation is not None:
+        raise GitSafetyError(
+            f"the repo has a {operation} in progress — finish it (git "
+            f"{operation} --continue) or abort it (git {operation} --abort) "
+            "first. Foreman refuses to branch off a mid-operation state, even "
+            "with force_dirty."
+        )
+
     if not force_dirty and not is_clean(path):
         raise GitSafetyError(
             "the repo has uncommitted changes — commit or stash your changes "
             "first, or pass force_dirty=True to proceed anyway (not recommended)."
         )
+
+
+def _lock_path(path) -> Optional[Path]:
+    """The lock file location inside the repo's real git dir, or None if the
+    git dir can't be determined (caller treats that as 'cannot lock')."""
+    result = _run_git(path, ["rev-parse", "--absolute-git-dir"])
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return Path(result.stdout.strip()) / "foreman.lock"
+
+
+def acquire_lock(path, run_id: str) -> None:
+    """Claim exclusive Foreman use of this repo for `run_id`.
+
+    Two Foreman runs (two CLI invocations, two web-console tabs) pointed at
+    the same repo would race each other's `git checkout`/`git add`/`git
+    commit` against one shared working tree — one run's checkout flips HEAD
+    mid-way through the other run's commit, and commits land on the wrong
+    run's branch. A lock file in the git dir serializes them.
+
+    Re-acquiring for the SAME run_id succeeds (resume after a crash finds its
+    own stale lock and proceeds). A different run_id raises with the manual
+    escape hatch spelled out: if the other run is truly dead, the user deletes
+    the file. Crash-staleness is accepted rather than papered over with
+    PID-liveness guesses — the message says exactly what to check and do.
+    """
+    lock = _lock_path(path)
+    if lock is None:
+        raise GitSafetyError(f"could not locate the git directory for {path!s} to lock it.")
+    if lock.exists():
+        holder = lock.read_text(encoding="utf-8", errors="replace").strip()
+        if holder == run_id:
+            return  # our own lock (a resume, or a crashed earlier pass of us)
+        raise GitSafetyError(
+            f"another Foreman run ({holder or 'unknown'}) is already using "
+            f"this repo. Wait for it to finish — or, if you are sure no other "
+            f"Foreman run is active, delete {lock} and retry."
+        )
+    lock.write_text(run_id, encoding="utf-8")
+
+
+def release_lock(path, run_id: str) -> None:
+    """Release the lock IF it is still ours. Never raises — releasing is
+    best-effort cleanup on the way out; a failure to release only means the
+    next run sees the stale-lock message with its delete instruction."""
+    try:
+        lock = _lock_path(path)
+        if lock is None or not lock.exists():
+            return
+        holder = lock.read_text(encoding="utf-8", errors="replace").strip()
+        if holder == run_id:
+            lock.unlink()
+    except OSError:
+        pass
