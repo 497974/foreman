@@ -24,6 +24,7 @@ model this module does and does not cover.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -32,6 +33,19 @@ from pathlib import Path
 from .safety import is_blocked_command
 
 MAX_OUTPUT = 10_000  # chars; keeps one runaway command from eating the context window
+
+# search_files caps — the tool exists to ORIENT the model in a large repo,
+# not to stream the repo into its context window. 100 matching lines is
+# plenty to locate a definition; the executor reads the actual files next.
+SEARCH_MAX_MATCHES = 100
+SEARCH_MAX_LINE_CHARS = 300
+SEARCH_MAX_FILE_BYTES = 2_000_000  # skip anything bigger (bundles, datasets)
+# Directories that are never what the model is looking for and can be huge.
+SEARCH_SKIP_DIRS = {
+    ".git", "__pycache__", "node_modules", ".venv", "venv", ".tox",
+    ".pytest_cache", ".mypy_cache", ".ruff_cache", "dist", "build",
+    ".idea", ".vscode", ".eggs",
+}
 
 
 class WorkspaceError(RuntimeError):
@@ -117,6 +131,85 @@ class Workspace:
         for entry in sorted(target.iterdir(), key=lambda p: p.name):
             names.append(entry.name + "/" if entry.is_dir() else entry.name)
         return names
+
+    def search_files(self, pattern: str, path: str = ".") -> str:
+        """Search file contents under ``path`` for ``pattern``; return matches
+        as ``relative/path:line_number: line text``, one per line.
+
+        This is the executor's grep. Without it, orienting in a real
+        (existing-project) repo means list_dir + read whole files — which
+        floods the context window and still misses where a symbol actually
+        lives. With it, the model locates code first and reads precisely.
+
+        ``pattern`` is tried as a regex; if it does not compile (weaker
+        models emit broken regexes constantly), it is used as a literal
+        substring instead of erroring — a search tool that answers "your
+        query was malformed" teaches the model nothing about the code.
+        Matching is case-insensitive: the model rarely knows the exact
+        casing of an identifier it has never seen.
+
+        Binary files (NUL byte in the first KB), oversized files, and
+        vendored/VCS directories (.git, node_modules, __pycache__, ...) are
+        skipped. Output is capped at SEARCH_MAX_MATCHES lines with an
+        explicit truncation note — silent truncation would read as "that's
+        everything" when it isn't.
+        """
+        target = self._resolve(path)
+        if not target.is_dir():
+            raise WorkspaceError(f"no such directory: {path}")
+
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            compiled = re.compile(re.escape(pattern), re.IGNORECASE)
+
+        matches: list[str] = []
+        truncated = False
+        # sorted() at every level for deterministic output across platforms
+        # (dict-ordered os.walk results differ between runs/filesystems).
+        stack = [target]
+        while stack and not truncated:
+            directory = stack.pop(0)
+            try:
+                entries = sorted(directory.iterdir(), key=lambda p: p.name)
+            except OSError:
+                continue
+            for entry in entries:
+                if entry.is_dir():
+                    if entry.name not in SEARCH_SKIP_DIRS:
+                        stack.append(entry)
+                    continue
+                if not entry.is_file():
+                    continue
+                try:
+                    if entry.stat().st_size > SEARCH_MAX_FILE_BYTES:
+                        continue
+                    with open(entry, "rb") as fh:
+                        head = fh.read(1024)
+                    if b"\x00" in head:
+                        continue  # binary
+                    text = entry.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                rel = entry.relative_to(self.root).as_posix()
+                for lineno, line in enumerate(text.splitlines(), start=1):
+                    if compiled.search(line):
+                        snippet = line.strip()
+                        if len(snippet) > SEARCH_MAX_LINE_CHARS:
+                            snippet = snippet[:SEARCH_MAX_LINE_CHARS] + "..."
+                        matches.append(f"{rel}:{lineno}: {snippet}")
+                        if len(matches) >= SEARCH_MAX_MATCHES:
+                            truncated = True
+                            break
+                if truncated:
+                    break
+
+        if not matches:
+            return f"no matches for {pattern!r}"
+        out = "\n".join(matches)
+        if truncated:
+            out += f"\n... [truncated at {SEARCH_MAX_MATCHES} matches — narrow the pattern or path]"
+        return out
 
     # ---- shell -------------------------------------------------------------
 

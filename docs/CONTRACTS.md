@@ -565,3 +565,43 @@ Python logic, just wiring — but confirm nothing else broke). Commit ONLY:
 serve.py, foreman/webui/index.html, README.md, docs/EXISTING_PROJECTS.md.
 Message: "Existing-project mode: API + console UI + docs" + trailer
 "Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>".
+
+# Addendum 5 (frozen 2026-07-06): search_files executor tool
+
+## §15 The executor gets a fifth workspace tool: search_files
+
+**Motivation (a user-named pain, not speculative):** in existing-project mode
+the workspace is a real repository. With only read_file/write_file/list_dir/
+run_command, orienting in a codebase of any size means listing directories
+and reading whole files into a clean context that started with zero knowledge
+of the repo — slow, context-hungry, and it still misses where a symbol
+actually lives. Every serious coding agent (Claude Code, qwen-code, aider)
+leads with content search for exactly this reason.
+
+**Contract:**
+
+    def search_files(self, pattern: str, path: str = ".") -> str
+    # returns "relative/path:line_number: line text" per match, or
+    # "no matches for '<pattern>'"
+
+- `pattern` is tried as a case-insensitive regex; an invalid regex is
+  RETRIED AS A LITERAL SUBSTRING rather than erroring (weaker models emit
+  broken regexes constantly; "your query was malformed" teaches the model
+  nothing about the code).
+- `path` goes through the same `_resolve` jail as every other file op.
+- Skips: SEARCH_SKIP_DIRS (.git, node_modules, __pycache__, venvs, build
+  dirs...), files > SEARCH_MAX_FILE_BYTES, and binary files (NUL in the
+  first KB).
+- Output capped at SEARCH_MAX_MATCHES lines with an EXPLICIT truncation
+  note (silent truncation reads as "that's everything" when it isn't);
+  individual lines capped at SEARCH_MAX_LINE_CHARS.
+- Deterministic ordering (sorted directory walk) so identical repos give
+  identical results across platforms/runs.
+- Pure Python (no ripgrep/grep dependency) — the zero-external-deps rule
+  from §0 holds; this must work on a bare Windows box.
+
+The executor's TOOLS schema and SYSTEM_PROMPT are updated to name it, with
+the guidance "ORIENT before you edit": search first, then read exactly the
+files that matched. The tool list sentence in §2 of the original contract is
+superseded by this addendum (read_file, write_file, list_dir, search_files,
+run_command, done).

@@ -1,0 +1,257 @@
+{
+  "checklist": "demo/requirements_mini.md",
+  "timestamp_utc": "20260704T075126Z",
+  "n_exam_tasks": 5,
+  "conditions": {
+    "A": {
+      "workspace": "C:\\Users\\24973\\Desktop\\Foreman\\evals\\workspaces_20260704T075126Z\\condition_a",
+      "elapsed_s": 45.92100000000028,
+      "executor_attempts": 1,
+      "handoffs": [
+        "{\"schema_version\": 1, \"task_id\": \"A00\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Created Flask app skeleton with /health route\", \"Implemented SQLite Expense model with id, amount, category, note, created_at fields\", \"Added POST /expenses endpoint with amount validation (rejects <= 0)\", \"Added GET /expenses endpoint returning expenses newest first\", \"Created comprehensive pytest suite covering health check, create-and-list happy path, and negative amount rejection\"], \"files_touched\": [\"app.py\", \"test_app.py\"], \"interface_contract\": [], \"gotchas\": [\"The database file 'expenses.db' is created automatically on first run\", \"The application uses sqlite3 which is built into Python, no external dependencies needed\"], \"self_check\": [\"app.py exposes Flask instance named 'app' - verified\", \"Health check route at GET /health exists and works - verified by tests\", \"Expense model has all required fields (id, amount, category, note, created_at) - verified in DB schema\", \"POST /expenses rejects amounts <= 0 with HTTP 400 - verified by tests\", \"GET /expenses returns JSON with newest expenses first - verified by tests\", \"pytest suite covers all required test cases - all 4 tests pass\"], \"handoff_reason\": \"Implemented a complete expense tracker Flask application meeting all requirements.\", \"facts_for_replanner\": []}"
+      ],
+      "token_usage": {
+        "per_model": {
+          "qwen-plus": {
+            "prompt_tokens": 9544,
+            "completion_tokens": 2374,
+            "total_tokens": 11918,
+            "calls": 4
+          }
+        },
+        "grand_total": {
+          "prompt_tokens": 9544,
+          "completion_tokens": 2374,
+          "total_tokens": 11918,
+          "calls": 4
+        }
+      },
+      "referee": {
+        "task_verdicts": [
+          {
+            "task_id": "T01",
+            "title": "Create a Flask app skeleton with a health-check route at GET /health",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T02",
+            "title": "Add a SQLite Expense model with fields: id, amount, category, note, created_at",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T03",
+            "title": "Add POST /expenses that creates an expense; reject amounts <= 0 with HTTP 400",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T04",
+            "title": "Add GET /expenses that returns all expenses as JSON, newest first",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T05",
+            "title": "Add a pytest suite covering the create-and-list happy path and the negative-amount rejection",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          }
+        ],
+        "n_tasks": 5,
+        "n_passed": 0,
+        "pytest_ran": true,
+        "pytest_passed": false,
+        "pytest_exit_code": 1,
+        "pytest_output_tail": ".F..                                                                     [100%]\n================================== FAILURES ===================================\n________________________ test_create_and_list_expenses ________________________\n\nclient = <FlaskClient <Flask 'app'>>\n\n    def test_create_and_list_expenses(client):\n        \"\"\"Test creating an expense and then listing all expenses\"\"\"\n        # Create an expense\n        expense_data = {\n            'amount': 100.50,\n            'category': 'food',\n            'note': 'Grocery shopping'\n        }\n    \n        response = client.post('/expenses',\n                              json=expense_data,\n                              content_type='application/json')\n    \n        assert response.status_code == 201\n        data = json.loads(response.data.decode('utf-8'))\n        assert data['amount'] == 100.50\n        assert data['category'] == 'food'\n        assert data['note'] == 'Grocery shopping'\n        assert 'id' in data\n        assert 'created_at' in data\n    \n        # List all expenses\n        response = client.get('/expenses')\n        assert response.status_code == 200\n        data = json.loads(response.data.decode('utf-8'))\n>       assert len(data) == 1\nE       AssertionError: assert 2 == 1\nE        +  where 2 = len([{'amount': 100.5, 'category': 'food', 'created_at': '2026-07-04 07:52:13', 'id': 2, ...}, {'amount': 100.5, 'category': 'food', 'created_at': '2026-07-04 07:52:04', 'id': 1, ...}])\n\ntest_app.py:43: AssertionError\n=========================== short test summary info ===========================\nFAILED test_app.py::test_create_and_list_expenses - AssertionError: assert 2 ...\n1 failed, 3 passed in 0.33s\n"
+      }
+    },
+    "B": {
+      "workspace": "C:\\Users\\24973\\Desktop\\Foreman\\evals\\workspaces_20260704T075126Z\\condition_b",
+      "elapsed_s": 161.04699999999866,
+      "executor_attempts": 5,
+      "handoffs": [
+        "{\"schema_version\": 1, \"task_id\": \"T01\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Created app.py file with Flask application instance named 'app'\", \"Added health check route at GET /health endpoint\", \"Implemented proper JSON response with status code 200\"], \"files_touched\": [\"app.py\"], \"interface_contract\": [], \"gotchas\": [\"No verification command was specified, so no automated testing was performed\", \"The app runs in debug mode by default - this should be changed for production deployments\"], \"self_check\": [\"The Flask app is created and named 'app' in app.py - ✓\", \"The health check route exists at GET /health - ✓\", \"The implementation follows Flask best practices - ✓\"], \"handoff_reason\": \"Created a Flask application skeleton with a health-check route at GET /health\", \"facts_for_replanner\": []}",
+        "{\"schema_version\": 1, \"task_id\": \"T04\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Created GET /expenses route handler\", \"Added in-memory expenses data structure\", \"Implemented sorting by created_at in descending order\", \"Added datetime serialization for JSON compatibility\", \"Used jsonify for proper JSON response\"], \"files_touched\": [\"app.py\"], \"interface_contract\": [], \"gotchas\": [\"This uses in-memory storage - for production, would need database integration\", \"Datetime objects are converted to ISO format strings for JSON serialization\"], \"self_check\": [\"✅ GET /expenses returns JSON array of expenses\", \"✅ Expenses are ordered by created_at descending (newest first)\", \"✅ Uses proper Flask jsonify for JSON response\", \"✅ Includes datetime serialization for JSON compatibility\"], \"handoff_reason\": \"Implemented GET /expenses endpoint that returns all expenses as JSON ordered by created_at in descending order (newest first).\", \"facts_for_replanner\": []}",
+        "{\"schema_version\": 1, \"task_id\": \"T02\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Defined Expense model with id (Integer, primary key)\", \"Defined amount field (Float, non-nullable)\", \"Defined category field (String, non-nullable)\", \"Defined note field (String, nullable)\", \"Defined created_at field (DateTime with default=datetime.utcnow, non-nullable)\"], \"files_touched\": [\"models.py\"], \"interface_contract\": [], \"gotchas\": [\"The db instance is initialized but not yet configured with the Flask app - this will need to be done in app.py\", \"The model uses SQLAlchemy's declarative base pattern which requires proper Flask-SQLAlchemy setup\"], \"self_check\": [\"The Expense model has exactly the 5 required fields: id, amount, category, note, created_at\", \"All fields have appropriate data types and constraints\", \"The model follows SQLAlchemy best practices with proper column definitions\", \"The model includes a __repr__ method for debugging purposes\"], \"handoff_reason\": \"Created Expense SQLAlchemy model with all required fields: id, amount, category, note, and created_at.\", \"facts_for_replanner\": []}",
+        "{\"schema_version\": 1, \"task_id\": \"T03\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Configured SQLAlchemy database in app.py\", \"Added POST /expenses endpoint\", \"Implemented validation for amount > 0\", \"Used Expense model from models.py\", \"Added proper error handling and response formatting\"], \"files_touched\": [\"app.py\"], \"interface_contract\": [], \"gotchas\": [\"The database initialization uses SQLite with 'expenses.db' file\", \"The app uses before_first_request to create tables, which works for development but may need adjustment for production\"], \"self_check\": [\"POST /expenses with positive amount creates expense record ✓\", \"POST /expenses with amount <= 0 returns HTTP 400 ✓\", \"Uses the Expense model defined in models.py ✓\", \"Proper error handling and response formatting ✓\"], \"handoff_reason\": \"Implemented POST /expenses endpoint that creates a new expense record with validation for positive amounts. The endpoint rejects amounts <= 0 with HTTP 400 status.\", \"facts_for_replanner\": []}",
+        "{\"schema_version\": 1, \"task_id\": \"T05\", \"attempt_no\": 0, \"outcome\": \"success\", \"completed_work\": [\"Created test_expenses.py with pytest tests for expense creation\", \"Added tests for happy path creation and listing\", \"Added tests for negative amount rejection\", \"Added tests for zero amount rejection\", \"Added tests for missing fields validation\", \"Added test for sorting verification\"], \"files_touched\": [\"test_expenses.py\", \"app.py\"], \"interface_contract\": [], \"gotchas\": [\"The app.py file required modification to handle Flask version compatibility by replacing deprecated before_first_request decorator\", \"Tests use in-memory SQLite database for isolation\"], \"self_check\": [\"All acceptance criteria are met: tests successfully create and list expenses\", \"Negative amount rejection is properly tested\", \"All tests pass when executed with pytest\"], \"handoff_reason\": \"Created a comprehensive pytest test suite for the expense creation and listing functionality, including happy path tests and negative case validation.\", \"facts_for_replanner\": []}"
+      ],
+      "token_usage": {
+        "per_model": {
+          "qwen-plus": {
+            "prompt_tokens": 60213,
+            "completion_tokens": 7958,
+            "total_tokens": 68171,
+            "calls": 28
+          }
+        },
+        "grand_total": {
+          "prompt_tokens": 60213,
+          "completion_tokens": 7958,
+          "total_tokens": 68171,
+          "calls": 28
+        }
+      },
+      "referee": {
+        "task_verdicts": [
+          {
+            "task_id": "T01",
+            "title": "Create a Flask app skeleton with a health-check route at GET /health",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T02",
+            "title": "Add a SQLite Expense model with fields: id, amount, category, note, created_at",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T03",
+            "title": "Add POST /expenses that creates an expense; reject amounts <= 0 with HTTP 400",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T04",
+            "title": "Add GET /expenses that returns all expenses as JSON, newest first",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T05",
+            "title": "Add a pytest suite covering the create-and-list happy path and the negative-amount rejection",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          }
+        ],
+        "n_tasks": 5,
+        "n_passed": 0,
+        "pytest_ran": true,
+        "pytest_passed": true,
+        "pytest_exit_code": 0,
+        "pytest_output_tail": "......                                                                   [100%]\n6 passed in 0.52s\n"
+      }
+    },
+    "C": {
+      "workspace": "C:\\Users\\24973\\Desktop\\Foreman\\evals\\workspaces_20260704T075126Z\\condition_c_runs\\run_9d0578e686cc\\workspace",
+      "run_dir": "evals\\workspaces_20260704T075126Z\\condition_c_runs\\run_9d0578e686cc",
+      "elapsed_s": 193.6869999999999,
+      "executor_attempts": 5,
+      "orchestrator_summary": {
+        "run_id": "run_9d0578e686cc",
+        "run_dir": "evals\\workspaces_20260704T075126Z\\condition_c_runs\\run_9d0578e686cc",
+        "counts": {
+          "pending": 0,
+          "ready": 0,
+          "in_progress": 0,
+          "pending_review": 0,
+          "done": 5,
+          "blocked": 0,
+          "archived": 0
+        },
+        "done": 5,
+        "blocked": 0,
+        "total_tasks": 5,
+        "attempts_per_task": {
+          "T01": 1,
+          "T02": 1,
+          "T03": 1,
+          "T04": 1,
+          "T05": 1
+        },
+        "claims": 5,
+        "elapsed_s": 193.65600000000086,
+        "complete": true
+      },
+      "token_usage": {
+        "per_model": {
+          "qwen-plus": {
+            "prompt_tokens": 92797,
+            "completion_tokens": 9337,
+            "total_tokens": 102134,
+            "calls": 36
+          }
+        },
+        "grand_total": {
+          "prompt_tokens": 92797,
+          "completion_tokens": 9337,
+          "total_tokens": 102134,
+          "calls": 36
+        }
+      },
+      "referee": {
+        "task_verdicts": [
+          {
+            "task_id": "T01",
+            "title": "Create a Flask app skeleton with a health-check route at GET /health",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T02",
+            "title": "Add a SQLite Expense model with fields: id, amount, category, note, created_at",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T03",
+            "title": "Add POST /expenses that creates an expense; reject amounts <= 0 with HTTP 400",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T04",
+            "title": "Add GET /expenses that returns all expenses as JSON, newest first",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          },
+          {
+            "task_id": "T05",
+            "title": "Add a pytest suite covering the create-and-list happy path and the negative-amount rejection",
+            "test_strategy": "",
+            "passed": false,
+            "exit_code": -1,
+            "output_tail": "(no test_strategy given)"
+          }
+        ],
+        "n_tasks": 5,
+        "n_passed": 0,
+        "pytest_ran": true,
+        "pytest_passed": true,
+        "pytest_exit_code": 0,
+        "pytest_output_tail": ".....                                                                    [100%]\n============================== warnings summary ===============================\nmodels.py:5\n  C:\\Users\\24973\\Desktop\\Foreman\\evals\\workspaces_20260704T075126Z\\condition_c_runs\\run_9d0578e686cc\\workspace\\models.py:5: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)\n    Base = declarative_base()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 1 warning in 0.47s\n"
+      }
+    }
+  }
+}

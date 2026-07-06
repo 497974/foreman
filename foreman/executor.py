@@ -69,6 +69,31 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "search_files",
+            "description": (
+                "Search file CONTENTS across the workspace for a pattern "
+                "(regex; an invalid regex is retried as literal text; "
+                "case-insensitive). Returns matching lines as "
+                "'path:line_number: text'. In an existing project, use this "
+                "FIRST to locate where a symbol/route/config lives before "
+                "reading whole files — much cheaper than list_dir + read_file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"},
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search under; defaults to the workspace root.",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": "Run a shell command with cwd at the workspace root. Use this to run tests / linters / the verification command.",
             "parameters": {
@@ -103,8 +128,13 @@ _TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
 SYSTEM_PROMPT = """You are an autonomous software executor working inside a sandboxed workspace.
 
 Work ONLY inside the workspace via the tools you have been given — read_file,
-write_file, list_dir, run_command. Never claim to have done something you did
-not actually do through a tool call.
+write_file, list_dir, search_files, run_command. Never claim to have done
+something you did not actually do through a tool call.
+
+When working in an existing codebase, ORIENT before you edit: use
+search_files to find where the relevant symbol, route, or config actually
+lives, then read exactly those files. Do not guess file locations and do not
+read directories wholesale.
 
 DO NOT implement placeholders or simplified implementations. A stub, a TODO,
 a "left as an exercise", or a happy-path-only implementation is not
@@ -183,6 +213,8 @@ def _tool_result_str(
     if name == "list_dir":
         entries = workspace.list_dir(args.get("path", "."))
         return "\n".join(entries) if entries else "(empty directory)"
+    if name == "search_files":
+        return workspace.search_files(args["pattern"], args.get("path", "."))
     if name == "run_command":
         result = workspace.run(args["command"], timeout=timeout)
         stdout = result.stdout

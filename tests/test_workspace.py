@@ -135,3 +135,81 @@ def test_run_truncates_long_output(tmp_path):
     )
     assert len(result.stdout) <= MAX_OUTPUT + 100  # small allowance for the truncation note
     assert "truncated" in result.stdout
+
+
+# ---- search_files ----------------------------------------------------------
+
+
+def _seed_search_tree(root):
+    """A small fake project: nested source, a vendored dir, a binary file."""
+    (root / "app").mkdir(parents=True)
+    (root / "app" / "routes.py").write_text(
+        "from flask import Flask\n\n"
+        "@app.route('/claims')\n"
+        "def list_claims():\n"
+        "    return CLAIMS\n",
+        encoding="utf-8",
+    )
+    (root / "app" / "models.py").write_text(
+        "class Claim:\n    status = 'pending'\n", encoding="utf-8"
+    )
+    (root / "node_modules").mkdir()
+    (root / "node_modules" / "junk.js").write_text(
+        "route route route\n", encoding="utf-8"
+    )
+    (root / "logo.bin").write_bytes(b"\x00\x01\x02route\x00")
+
+
+def test_search_files_finds_matches_with_path_and_line_numbers(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    _seed_search_tree(ws.root)
+    out = ws.search_files("route")
+    assert "app/routes.py:3:" in out
+    assert "@app.route('/claims')" in out
+
+
+def test_search_files_is_case_insensitive(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    _seed_search_tree(ws.root)
+    out = ws.search_files("CLAIM")
+    assert "models.py" in out  # matches 'class Claim' despite casing
+
+
+def test_search_files_skips_vendored_dirs_and_binaries(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    _seed_search_tree(ws.root)
+    out = ws.search_files("route")
+    assert "node_modules" not in out
+    assert "logo.bin" not in out
+
+
+def test_search_files_invalid_regex_falls_back_to_literal(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    _seed_search_tree(ws.root)
+    # '(' alone is an invalid regex; as a literal it matches the decorator line.
+    out = ws.search_files("route('")
+    assert "routes.py" in out
+    assert "no matches" not in out
+
+
+def test_search_files_reports_no_matches_plainly(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    _seed_search_tree(ws.root)
+    assert "no matches" in ws.search_files("zebra_quantum_flux")
+
+
+def test_search_files_respects_the_jail(tmp_path):
+    ws = Workspace(tmp_path / "ws")
+    with pytest.raises(WorkspaceError):
+        ws.search_files("anything", path="..")
+
+
+def test_search_files_caps_results_with_truncation_note(tmp_path):
+    from foreman.workspace import SEARCH_MAX_MATCHES
+
+    ws = Workspace(tmp_path / "ws")
+    lines = "\n".join(f"needle_{i}" for i in range(SEARCH_MAX_MATCHES + 50))
+    (ws.root / "big.txt").write_text(lines, encoding="utf-8")
+    out = ws.search_files("needle")
+    assert out.count("\n") <= SEARCH_MAX_MATCHES + 1  # matches + truncation note
+    assert "truncated" in out

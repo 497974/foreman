@@ -69,7 +69,7 @@ requirements ─▶ Planner ─▶ [ Ledger ] ◀─ Dispatcher (pure code, zero
 |---|---|---|
 | Planner | `qwen-max` | Requirements → dependency-ordered task DAG; every task carries acceptance criteria + a runnable `test_strategy` |
 | Dispatcher | pure Python, no LLM | Dependency resolution, atomic compare-and-swap claims, TTL-lease crash recovery, shared account-level rate limiter |
-| Executor | `qwen3-coder-plus` (or `qwen-plus`) | One task per clean context via an OpenAI tool-calling loop (`read_file` / `write_file` / `list_dir` / `run_command` / `done`) |
+| Executor | `qwen3-coder-plus` (or `qwen-plus`) | One task per clean context via an OpenAI tool-calling loop (`read_file` / `write_file` / `list_dir` / `search_files` / `run_command` / `done`) |
 | Verifier | `qwen-plus`, JSON mode | Objective gates (task's own test + a `pytest -q` regression sweep) first, then three-tier LLM scoring of each acceptance criterion |
 | Arbiter / Replanner | `qwen-max` | Settles disputes (reads actual evidence files); after the retry ceiling, escalates a task to the replanner |
 
@@ -200,9 +200,9 @@ python demo/smoke_run.py                                          # fake executo
 python main.py --checklist demo/requirements_mini.md --mock        # same loop via main.py's CLI
 ```
 
-Run the test suite (109 tests: concurrency safety, retry ladder, crash
-recovery, dispute/arbitration, resume, web API, Console v2 telemetry/pricing/
-stop-resume/config):
+Run the test suite (231 tests: concurrency safety, retry ladder, crash
+recovery, dispute/arbitration, resume, git safety rails, command policy,
+web API, Console v2 telemetry/pricing/stop-resume/config):
 
 ```bash
 python -m pytest -q
@@ -212,6 +212,7 @@ Real run with the web console (requires `DASHSCOPE_API_KEY` in `.env`):
 
 ```bash
 start_foreman.bat            # Windows: installs deps, checks .env, opens the console
+./start_foreman.sh           # macOS/Linux: same thing
 python serve.py               # or directly; add --no-browser for headless environments
 ```
 
@@ -310,7 +311,12 @@ including the `--force-dirty` escape hatch.
       requirements templates, config health panel
 - [x] Demo mode: full console experience with zero API key, plus
       `FOREMAN_MOCK_DELAY`/`mock_delay_s` pacing for filming
-- [x] Test suite green (109 tests, no API key required)
+- [x] Existing-project mode hardened by adversarial audit: non-overridable
+      mid-merge/rebase rejection, pre-existing-branch refusal, per-repo run
+      lock, force-dirty work snapshotted as its own labeled commit
+- [x] `search_files` executor tool — content search (grep) so the executor
+      orients in a real codebase before editing instead of reading it wholesale
+- [x] Test suite green (231 tests, no API key required)
 - [ ] 20-item full-checklist evaluation (quota-gated — needs a live
       DashScope run against `demo/requirements_full.md`)
 - [ ] Function Compute deployment proof (steps are written in
