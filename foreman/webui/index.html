@@ -253,6 +253,13 @@
     margin-left: 22px;
   }
 
+  .hint {
+    color: var(--ink-soft);
+    font-size: 10.5px;
+    line-height: 1.4;
+    margin: 2px 0 4px 0;
+  }
+
   button.start-btn {
     background: var(--orange);
     color: #fff;
@@ -382,6 +389,11 @@
     border-radius: 10px;
   }
   .run-header .rh-chip.mock { background: var(--orange); color: #fff; font-weight: 700; }
+  .run-header .rh-chip.branch {
+    background: var(--steel);
+    color: #fff;
+    font-family: Consolas, monospace;
+  }
   .run-header .rh-cost {
     font-size: 12.5px;
     font-weight: 600;
@@ -746,6 +758,14 @@
     </label>
     <div class="hint" id="demo-mode-hint" style="display:none;"></div>
 
+    <div class="field-label" data-i18n="projectDirLabel">Existing project folder (optional)</div>
+    <input type="text" id="project-dir-input" data-i18n-placeholder="projectDirPlaceholder" placeholder="C:\path\to\repo">
+    <label class="checkbox-row">
+      <input type="checkbox" id="project-dir-confirm-cb">
+      <span data-i18n="projectDirConfirm">I understand this will create a git branch and modify real files in that folder</span>
+    </label>
+    <div class="hint" id="project-dir-hint" data-i18n="projectDirHint">Requires a git repo; Foreman commits per task on an isolated foreman/&lt;run_id&gt; branch and never touches your main branch.</div>
+
     <button class="start-btn" id="start-btn" data-i18n="startForeman">Start Foreman</button>
     <div class="status-line" id="status-line"></div>
 
@@ -770,6 +790,7 @@
       <span class="rh-chip" id="rh-chip-executor"></span>
       <span class="rh-chip" id="rh-chip-verifier"></span>
       <span class="rh-chip mock" id="rh-chip-mock" style="display:none;" data-i18n="mockChip" title="Demo mode — synthetic output, no live API calls" data-i18n-title="mockChipTooltip">MOCK</span>
+      <span class="rh-chip branch" id="rh-chip-branch" style="display:none;"></span>
       <span class="rh-cost tabular" id="rh-cost"></span>
       <span class="rh-clock tabular" id="rh-clock">00:00</span>
       <div class="rh-spacer"></div>
@@ -827,6 +848,12 @@
       customOption: "custom…",
       demoMode: "Demo mode — runs without an API key",
       noKeyHint: "No API key configured — demo mode is locked on. Add DASHSCOPE_API_KEY in .env to run live.",
+      projectDirLabel: "Existing project folder (optional)",
+      projectDirPlaceholder: "C:\\path\\to\\repo",
+      projectDirConfirm: "I understand this will create a git branch and modify real files in that folder",
+      projectDirHint: "Requires a git repo; Foreman commits per task on an isolated foreman/<run_id> branch and never touches your main branch.",
+      projectDirNeedsConfirm: "Check the confirmation box to run against an existing project folder.",
+      chipBranch: "branch: {0}",
       startForeman: "Start Foreman",
       runs: "Runs",
       legend: "Legend",
@@ -911,6 +938,12 @@
       customOption: "自定义…",
       demoMode: "演示模式 — 无需 API Key 运行",
       noKeyHint: "未配置 API Key — 已锁定为演示模式。在 .env 中添加 DASHSCOPE_API_KEY 以正式运行。",
+      projectDirLabel: "已有项目文件夹（可选）",
+      projectDirPlaceholder: "C:\\path\\to\\repo",
+      projectDirConfirm: "我理解这将创建一个 git 分支，并修改该文件夹中的真实文件",
+      projectDirHint: "该文件夹必须是 git 仓库；Foreman 会在独立的 foreman/<run_id> 分支上按任务提交，绝不会改动你的主分支。",
+      projectDirNeedsConfirm: "请勾选确认框，才能针对已有项目文件夹运行。",
+      chipBranch: "分支: {0}",
       startForeman: "启动 Foreman",
       runs: "运行列表",
       legend: "图例",
@@ -1090,6 +1123,8 @@
     modelVerifierCustom: document.getElementById("model-verifier-custom"),
     demoModeCb: document.getElementById("demo-mode-cb"),
     demoModeHint: document.getElementById("demo-mode-hint"),
+    projectDirInput: document.getElementById("project-dir-input"),
+    projectDirConfirmCb: document.getElementById("project-dir-confirm-cb"),
     startBtn: document.getElementById("start-btn"),
     statusLine: document.getElementById("status-line"),
 
@@ -1101,6 +1136,7 @@
     rhChipExecutor: document.getElementById("rh-chip-executor"),
     rhChipVerifier: document.getElementById("rh-chip-verifier"),
     rhChipMock: document.getElementById("rh-chip-mock"),
+    rhChipBranch: document.getElementById("rh-chip-branch"),
     rhCost: document.getElementById("rh-cost"),
     rhClock: document.getElementById("rh-clock"),
     btnStop: document.getElementById("btn-stop"),
@@ -1347,6 +1383,17 @@
 
     var isMock = !!(config && config.mock);
     el.rhChipMock.style.display = isMock ? "inline-block" : "none";
+
+    // Existing-project mode (contract §15): branch is only present on runs
+    // started against a project_dir. Older/greenfield runs simply omit it —
+    // never crash on absence, just hide the chip.
+    var branch = detail.branch || (config && config.branch) || null;
+    if (branch) {
+      el.rhChipBranch.textContent = t("chipBranch", branch);
+      el.rhChipBranch.style.display = "inline-block";
+    } else {
+      el.rhChipBranch.style.display = "none";
+    }
 
     var usage = detail.usage || null;
     var estUsd = (detail.est_usd !== undefined && detail.est_usd !== null) ? detail.est_usd
@@ -1703,6 +1750,20 @@
     if (vv) models.verifier = vv;
     if (Object.keys(models).length) body.models = models;
     body.mock = !!el.demoModeCb.checked;
+
+    var projectDir = (el.projectDirInput.value || "").trim();
+    if (projectDir) {
+      // Client-side guard only, not a security boundary — the real guard is
+      // server-side git_safety (contract §15). The checkbox must be checked
+      // for the field to be sent at all.
+      if (!el.projectDirConfirmCb.checked) {
+        el.startBtn.disabled = false;
+        el.statusLine.classList.add("error");
+        el.statusLine.textContent = t("projectDirNeedsConfirm");
+        return;
+      }
+      body.project_dir = projectDir;
+    }
 
     api("/api/runs", {
       method: "POST",

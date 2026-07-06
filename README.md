@@ -283,6 +283,19 @@ Run the three-condition evaluation yourself:
 python scripts/evaluate.py --checklist demo/requirements_mini.md --conditions ABC --out evals/
 ```
 
+## Working on an existing project
+
+Foreman can also point the Executor at a real git repository instead of a
+fresh sandbox — same planner/executor/verifier/dispute loop, but the
+workspace *is* your repo. Use `--project-dir C:\path\to\repo` on the CLI, or
+fill in "Existing project folder" (plus its confirmation checkbox) in the web
+console's New Run form. The safety model: the folder must already be a git
+repo, ideally clean; Foreman works on an isolated `foreman/<run_id>` branch
+and commits once per completed task; **your main branch is never touched**,
+and Foreman never merges or pushes — review and merge it yourself. See
+[`docs/EXISTING_PROJECTS.md`](docs/EXISTING_PROJECTS.md) for the full guide,
+including the `--force-dirty` escape hatch.
+
 ## Status
 
 - [x] Task-DAG planner + zero-LLM dispatcher + durable SQLite ledger
@@ -308,10 +321,15 @@ python scripts/evaluate.py --checklist demo/requirements_mini.md --conditions AB
 
 Known boundaries of a focused v1 — each paired with the direction we'd take it:
 
-- **Greenfield-only today.** The executor builds new code in an isolated
-  workspace sandbox; it does not yet check out and edit an existing repo.
-  Roadmap: point `Workspace` at a cloned repo + branch instead of a fresh dir,
-  with the same jail and safety policy applying to the checkout.
+- **Greenfield by default, existing-project mode is opt-in.** Without
+  `--project-dir` the executor still builds in an isolated sandbox — the
+  safest default. Pointing Foreman at a real repo (see
+  [Working on an existing project](#working-on-an-existing-project)) is
+  gated behind git-safety checks and an isolated per-run branch, exactly
+  because editing someone's actual codebase deserves more guardrails than a
+  disposable sandbox does. Roadmap: extend the same git-safety model to
+  multi-branch/PR workflows (open a PR instead of leaving a local branch for
+  manual review).
 - **Verification is pytest-oriented.** The objective gate assumes
   `test_strategy` commands are pytest/`python -c` runnable (per the frozen
   planner contract in §5 of `docs/CONTRACTS.md`). Roadmap: a pluggable gate

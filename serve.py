@@ -16,6 +16,15 @@ that starts a real Orchestrator run in a background daemon thread.
 Addendum 2 (contract §9.6) adds the Product Console v2 API: stop/resume,
 download/archive, run config with model overrides, mock mode, and a small
 /api/config + /api/templates surface for the frontend's New Run form.
+
+Addendum 4 (contract §15) adds existing-project mode: POST /api/runs accepts
+optional "project_dir"/"force_dirty" fields threaded straight into
+Orchestrator(...). foreman.git_safety.GitSafetyError (raised by the
+Orchestrator when the target folder isn't a clean, checked-out-at-root git
+repo) is imported lazily inside the handler that needs it, not at module
+top-level — that module is owned by a concurrently-developed agent, and
+importing it lazily means this server still starts even on a checkout where
+that file hasn't landed yet.
 """
 
 from __future__ import annotations
@@ -203,13 +212,26 @@ def _settings_with_overrides(models: dict) -> Settings:
     return settings
 
 
-def _start_real_run(requirements: str, models: dict) -> str:
-    """Build a real Orchestrator (with optional per-role model overrides) and
-    run it on a daemon thread. Returns the run_id immediately."""
+def _start_real_run(
+    requirements: str,
+    models: dict,
+    project_dir: Optional[str] = None,
+    force_dirty: bool = False,
+) -> str:
+    """Build a real Orchestrator (with optional per-role model overrides and
+    optional existing-project wiring, contract §15) and run it on a daemon
+    thread. Returns the run_id immediately.
+
+    ``project_dir``/``force_dirty`` are passed straight through to
+    Orchestrator(...); Orchestrator.__init__ raises GitSafetyError (contract
+    §14) if the folder isn't a clean, root-level git repo — the caller
+    (_handle_start_run) is responsible for catching that and turning it into
+    an HTTP 400, per contract §15.
+    """
     from foreman.orchestrator import Orchestrator
 
     settings = _settings_with_overrides(models)
-    orch = Orchestrator(settings, run_root=RUN_ROOT)
+    orch = Orchestrator(settings, run_root=RUN_ROOT, project_dir=project_dir, force_dirty=force_dirty)
     run_id = orch.run_id
 
     _write_run_config(orch.run_dir, orch.settings, mock=False, requirements=requirements)
@@ -455,6 +477,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": f"invalid model name for {role}: {value!r}"})
                 return
 
+        project_dir = payload.get("project_dir") or None
+        if project_dir is not None and not isinstance(project_dir, str):
+            self._send_json(400, {"error": "project_dir must be a string"})
+            return
+        force_dirty = bool(payload.get("force_dirty", False))
+
         if mock:
             # Demo mode requires NO key at all (contract §9.6).
             if "mock_delay_s" in payload:
@@ -479,8 +507,20 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Lazy import (contract §15): foreman.git_safety is owned by a
+        # concurrently-developed agent. Importing GitSafetyError only here,
+        # at request time, means this server still starts up fine even on a
+        # checkout where that module hasn't landed on disk yet — a plain
+        # RuntimeError from Orchestrator would still be caught below either
+        # way, but we want GitSafetyError's actionable message to come back
+        # as 400 (bad request: fix your folder), not 409 (conflict).
+        from foreman.git_safety import GitSafetyError
+
         try:
-            run_id = _start_real_run(requirements, models)
+            run_id = _start_real_run(requirements, models, project_dir=project_dir, force_dirty=force_dirty)
+        except GitSafetyError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
         except RuntimeError as exc:
             self._send_json(409, {"error": str(exc)})
             return
