@@ -487,7 +487,20 @@ class Orchestrator:
             # set project_dir at all — those must see a plain no-op here,
             # exactly as if project_dir had defaulted to None.
             if getattr(self, "project_dir", None) is not None and passed:
-                git_safety.commit_all(self.project_dir, f"Foreman: {task.task_id} {task.title}")
+                # The checkpoint commit is an audit-trail guarantee, not the
+                # correctness mechanism — the task already passed real
+                # verification. A commit failure here (e.g. a host-level git
+                # problem) must be surfaced loudly, but must never unwind an
+                # already-earned DONE: that would make the code disappear from
+                # the ledger's view while it still sits, unrecorded, on disk.
+                try:
+                    git_safety.commit_all(self.project_dir, f"Foreman: {task.task_id} {task.title}")
+                except git_safety.GitSafetyError as exc:
+                    self._emit(
+                        "checkpoint_failed",
+                        task_id=task.task_id,
+                        detail={"message": str(exc)},
+                    )
 
             new_status = self.ledger.record_verdict(task.task_id, passed=passed, reason=reason)
             self._emit(

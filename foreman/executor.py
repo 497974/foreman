@@ -276,9 +276,24 @@ class Executor:
             # Echo the assistant turn (with its tool_calls) back into history
             # before appending results, exactly as the OpenAI protocol requires.
             # Normalize to plain dicts rather than echoing SDK objects, and
-            # patch empty arguments to "{}": some Qwen variants emit "" for
-            # zero-arg tool calls (list_dir), and DashScope then rejects the
-            # echoed history with 400 "function.arguments must be JSON".
+            # sanitize arguments to a valid JSON string: some Qwen variants
+            # emit "" for zero-arg tool calls (list_dir), and weaker models
+            # (observed live with qwen-turbo) occasionally emit a NON-empty but
+            # syntactically invalid JSON string. Either way, DashScope rejects
+            # the echoed history with 400 "function.arguments must be JSON" —
+            # and because this goes into `messages`, a malformed string here
+            # poisons every subsequent turn of the whole attempt, not just this
+            # one. So validate, don't just check for emptiness.
+            def _sanitized_arguments(raw: str | None) -> str:
+                raw = raw or ""
+                if raw.strip():
+                    try:
+                        json.loads(raw)
+                        return raw  # already valid JSON — echo verbatim
+                    except json.JSONDecodeError:
+                        pass  # fall through: invalid JSON, substitute a safe default
+                return "{}"
+
             messages.append(
                 {
                     "role": "assistant",
@@ -289,11 +304,7 @@ class Executor:
                             "type": "function",
                             "function": {
                                 "name": call.function.name,
-                                "arguments": (
-                                    call.function.arguments
-                                    if (call.function.arguments or "").strip()
-                                    else "{}"
-                                ),
+                                "arguments": _sanitized_arguments(call.function.arguments),
                             },
                         }
                         for call in tool_calls

@@ -150,6 +150,51 @@ def test_commit_all_returns_true_after_a_real_change(tmp_path):
     assert is_clean(repo) is True
 
 
+def test_commit_all_succeeds_with_zero_ambient_git_identity(tmp_path, monkeypatch):
+    """Caught live, not by any unit test: every OTHER fixture in this file
+    pre-configures user.name/user.email on the test repo (see _init_repo),
+    so none of them could have caught this. A real machine with no git
+    identity configured anywhere (no repo config, no global config, no
+    GIT_AUTHOR_* env vars) makes a bare `git commit` fail with exit 128
+    ("Please tell me who you are") — and the old code treated that failure
+    identically to "nothing to commit", silently discarding the checkpoint
+    this function exists to guarantee. commit_all must work regardless of
+    the host's git configuration, because Foreman cannot assume any
+    particular machine has git identity set up.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    # Deliberately do NOT configure user.name/user.email — this is the one
+    # thing every other fixture in this file does that we must NOT do here.
+    (repo / "existing.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    # The initial commit itself needs an identity to exist at all; supply it
+    # ad hoc via -c (command-scoped, writes nothing to repo/global config) so
+    # the repo/global config remains genuinely empty afterward.
+    _git(repo, "-c", "user.name=x", "-c", "user.email=x@x", "commit", "-m", "seed")
+    # `git config` (unlike `git log`/`status`) exits 1 when the key is unset —
+    # use check=False directly rather than the file's check=True _git() helper,
+    # which would raise CalledProcessError on that expected nonzero exit.
+    assert subprocess.run(
+        ["git", "-C", str(repo), "config", "--local", "user.name"],
+        capture_output=True, check=False,
+    ).returncode != 0
+
+    # Also neutralize any process-level identity env vars, so this test is
+    # airtight even if the CI/dev machine happens to export them.
+    for var in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.delenv(var, raising=False)
+
+    (repo / "feature.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    result = commit_all(repo, "Foreman: T01 add feature")
+
+    assert result is True
+    log = _git(repo, "log", "--oneline", "-1").stdout
+    assert "Foreman: T01 add feature" in log
+    assert is_clean(repo) is True
+
+
 # ---- ensure_ready -----------------------------------------------------------
 
 

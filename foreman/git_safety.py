@@ -92,14 +92,40 @@ def commit_all(path, message: str) -> bool:
     never makes an --allow-empty commit (a task that touched nothing real,
     e.g. a no-op verification-only retry, must not pollute the branch history
     with empty commits).
+
+    The commit is made with an explicit, hard-coded author identity
+    (-c user.name/user.email on the commit invocation only — this never reads
+    or writes the repo's or the user's global git config). This was a real bug
+    caught in live testing: a fresh machine with no git user.name/email
+    configured anywhere makes a bare `git commit` fail with exit 128 ("Please
+    tell me who you are"), and the old code treated that identically to
+    "nothing to commit" — silently discarding the per-task checkpoint this
+    function exists to guarantee. Pinning the identity here means the
+    checkpoint guarantee holds on ANY machine, regardless of host git config.
+
+    Raises GitSafetyError (with git's own stderr) if staging is non-empty but
+    the commit itself still fails for some other reason — a real failure at
+    this point must be loud, never swallowed as if it were a no-op.
     """
     _run_git(path, ["add", "-A"])
     diff = _run_git(path, ["diff", "--cached", "--quiet"])
     if diff.returncode == 0:
         # Nothing staged — diff --cached --quiet exits 0 when there is no diff.
         return False
-    commit = _run_git(path, ["commit", "-m", message])
-    return commit.returncode == 0
+    commit = _run_git(
+        path,
+        [
+            "-c", "user.name=Foreman",
+            "-c", "user.email=foreman@localhost",
+            "commit", "-m", message,
+        ],
+    )
+    if commit.returncode != 0:
+        raise GitSafetyError(
+            f"a checkpoint commit failed for {path!s} even though changes were "
+            f"staged (git said: {commit.stderr.strip() or commit.stdout.strip()})"
+        )
+    return True
 
 
 def ensure_ready(path, force_dirty: bool = False) -> None:

@@ -235,3 +235,76 @@ def test_plain_text_response_gets_nudged_then_counts_toward_max_iters(tmp_path):
         m.get("role") == "user" and "use one of your tools" in m["content"].lower()
         for m in second_call_messages
     )
+
+
+# ---- malformed tool-call arguments never poison the echoed history ---------
+#
+# Caught live: qwen-turbo occasionally emits a non-empty but syntactically
+# invalid JSON string for a tool call's arguments. The prior fix only handled
+# EMPTY arguments (some Qwen variants send "" for zero-arg calls); an
+# invalid-but-non-empty string slipped through, got echoed verbatim into
+# message history, and poisoned every subsequent turn with a 400 from
+# DashScope ("function.arguments must be JSON format") — a Foreman run that
+# had already passed planning died deep into execution. This test locks the
+# fix: the echoed history must always carry valid JSON, even when the model's
+# own arguments string does not parse.
+
+
+def _tool_call_raw_arguments(call_id: str, name: str, raw_arguments: str):
+    """Like _tool_call, but lets the test hand-supply a possibly-invalid raw
+    arguments string instead of json.dumps()-ing a dict."""
+    return SimpleNamespace(
+        id=call_id,
+        function=SimpleNamespace(name=name, arguments=raw_arguments),
+    )
+
+
+def test_malformed_json_arguments_are_sanitized_in_echoed_history(tmp_path):
+    workspace = Workspace(tmp_path / "ws")
+    task = make_task()
+
+    responses = [
+        _response(
+            _message(
+                tool_calls=[
+                    # Not valid JSON (unquoted keys, trailing comma) — a shape
+                    # a weaker model can plausibly emit.
+                    _tool_call_raw_arguments("call_1", "list_dir", "{path: '.', }")
+                ]
+            )
+        ),
+        _response(
+            _message(
+                tool_calls=[
+                    _tool_call(
+                        "call_2", "done",
+                        {"summary": "done", "completed_work": [], "files_touched": [],
+                         "gotchas": [], "self_check": []},
+                    )
+                ]
+            )
+        ),
+    ]
+    client = FakeClient(responses)
+    executor = Executor(client=client, model="qwen3-coder-plus", workspace=workspace, max_iters=5)
+
+    handoff = executor.execute(task, dependency_handoffs=[])
+
+    assert handoff.outcome == AttemptOutcome.SUCCESS.value
+
+    # The SECOND API call's message history is what would be sent to DashScope
+    # next — every echoed tool_call's arguments string there must parse as JSON.
+    second_call_messages = client.chat.completions.calls[1]["messages"]
+    echoed_assistant = [
+        m for m in second_call_messages
+        if m.get("role") == "assistant" and m.get("tool_calls")
+    ]
+    assert echoed_assistant, "expected an echoed assistant tool-call turn in history"
+    for m in echoed_assistant:
+        for tc in m["tool_calls"]:
+            json.loads(tc["function"]["arguments"])  # must not raise
+
+    # And the tool-execution loop still reported the parse error back to the
+    # model on that same turn (existing behavior, unchanged by this fix).
+    tool_results = [m for m in second_call_messages if m.get("role") == "tool"]
+    assert any("could not parse arguments" in m["content"] for m in tool_results)
