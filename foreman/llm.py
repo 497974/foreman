@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any, Callable
 
 from .telemetry import METER
@@ -73,6 +74,27 @@ def _is_persistent_429(exc: BaseException) -> bool:
     return status == 429 or "429" in text or "rate limit" in text or "rate_limit" in text
 
 
+def _is_transient_connection_error(exc: BaseException) -> bool:
+    """A network-level failure worth retrying against the SAME model.
+
+    Found live, not hypothetically: one dropped connection during a
+    verifier call killed an entire resumed run (openai.APIConnectionError
+    propagated straight up). Class-name sniffing keeps us decoupled from the
+    SDK's exact exception hierarchy, same policy as the quota sniffers above.
+    """
+    if exc.__class__.__name__ in ("APIConnectionError", "APITimeoutError"):
+        return True
+    text = str(exc).lower()
+    return "connection error" in text or "connection reset" in text or "connection aborted" in text
+
+
+# Same-model retries for transient network failures: 3 tries with short
+# backoff. Deliberately small — this exists to ride out a dropped packet,
+# not to wait out an outage (a run stuck sleeping looks like a hang).
+_TRANSIENT_RETRIES = 3
+_TRANSIENT_BACKOFF_S = (1.0, 2.0, 4.0)
+
+
 def create_with_fallback(
     client,
     model: str,
@@ -85,6 +107,13 @@ def create_with_fallback(
     the exact same call against the next model in ``fallback_models`` that is
     not equal to the one that just failed, in order, until one succeeds or the
     list is exhausted (in which case the original exception is re-raised).
+
+    A TRANSIENT network error (dropped connection, timeout) is different: the
+    model is fine, the wire hiccuped — so the same call is retried against the
+    SAME model up to ``_TRANSIENT_RETRIES`` times with short backoff before
+    the error is allowed to propagate. Without this, one dropped packet kills
+    an entire run (observed live during a resume).
+
     Any other exception (e.g. a plain 400 — bad request) is never swallowed:
     it propagates immediately, since silently masking a real bug behind
     "just try another model" would hide it forever.
@@ -92,15 +121,20 @@ def create_with_fallback(
     fallback_models = fallback_models or []
     tried = {model}
     current = model
-    last_exc: BaseException | None = None
+    transient_used = 0
 
     while True:
         try:
             return client.chat.completions.create(model=current, **create_kwargs)
-        except Exception as exc:  # noqa: BLE001 - re-raised below if not quota-shaped
+        except Exception as exc:  # noqa: BLE001 - re-raised below if not retryable
+            if _is_transient_connection_error(exc):
+                if transient_used >= _TRANSIENT_RETRIES:
+                    raise
+                time.sleep(_TRANSIENT_BACKOFF_S[min(transient_used, len(_TRANSIENT_BACKOFF_S) - 1)])
+                transient_used += 1
+                continue
             if not (_is_quota_or_forbidden_error(exc) or _is_persistent_429(exc)):
                 raise
-            last_exc = exc
             next_model = next(
                 (m for m in fallback_models if m and m not in tried), None
             )

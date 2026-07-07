@@ -257,3 +257,40 @@ def test_orchestrator_registers_fallback_hook_and_emits_event(tmp_path):
     assert len(events) == 1
     assert events[0]["type"] == "model_fallback"
     assert events[0]["detail"] == {"from": "model-a", "to": "model-b"}
+
+
+# ---- transient connection errors: retry SAME model, don't kill the run ------
+
+
+class APIConnectionError(Exception):
+    """Name-matched stand-in for openai.APIConnectionError — the sniffer
+    matches on class name so we stay decoupled from the SDK hierarchy."""
+
+
+def test_transient_connection_error_retries_same_model(monkeypatch):
+    # Observed live: one dropped connection during a verifier call killed an
+    # entire resumed run. Two connection errors then success must succeed,
+    # all against the SAME model, with no fallback substitution fired.
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)  # no real waiting
+    fired = []
+    monkeypatch.setattr(llm, "on_model_fallback", lambda a, b: fired.append((a, b)))
+    client = FakeClient({
+        "qwen-max": [APIConnectionError("Connection error."),
+                     APIConnectionError("Connection error."),
+                     _ok_response()],
+    })
+    resp = create_with_fallback(client, "qwen-max", ["qwen-turbo"])
+    assert resp.choices[0].message.content == "ok"
+    assert [c["model"] for c in client.chat.completions.calls] == ["qwen-max"] * 3
+    assert fired == []  # transient retry is not a model substitution
+
+
+def test_transient_connection_error_gives_up_after_retry_budget(monkeypatch):
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    errors = [APIConnectionError("Connection error.") for _ in range(10)]
+    client = FakeClient({"qwen-max": errors})
+    import pytest
+    with pytest.raises(APIConnectionError):
+        create_with_fallback(client, "qwen-max", [])
+    # 1 initial + _TRANSIENT_RETRIES retries, then propagate
+    assert len(client.chat.completions.calls) == 1 + llm._TRANSIENT_RETRIES

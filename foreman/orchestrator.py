@@ -473,6 +473,37 @@ class Orchestrator:
             if stop_path.exists():
                 stop_path.unlink()
 
+            # Heal tasks stranded mid-verification (found live, not in a
+            # unit test: a network error killed the VERIFIER's LLM call, i.e.
+            # the process died between submit_for_review and record_verdict).
+            # Such a task sits in PENDING_REVIEW with no claim to expire and
+            # nothing for the drive loop to pick up — the resumed run would
+            # stall forever with 0 claims. The executor's work is NOT lost:
+            # submit_for_review durably recorded the handoff in the attempts
+            # table. So finish the interrupted step — re-verify the stored
+            # handoff through the exact same verify/dispute/commit/verdict
+            # path an uninterrupted run would have used.
+            for task in self.ledger.tasks_by_status(TaskStatus.PENDING_REVIEW):
+                handoff = _reconstruct_handoff(
+                    task.task_id, self.ledger.attempt_history(task.task_id)
+                )
+                self._emit(
+                    "reverify",
+                    task_id=task.task_id,
+                    detail={"run_id": run_id, "handoff_found": handoff is not None},
+                )
+                if handoff is None:
+                    # No stored handoff to grade (should be impossible —
+                    # submit always records one). Fail the attempt honestly
+                    # rather than inventing evidence to score.
+                    self.ledger.record_verdict(
+                        task.task_id,
+                        passed=False,
+                        reason="resume: task was stranded in review with no stored handoff",
+                    )
+                    continue
+                self._verify_and_record(task, handoff)
+
             blocked = self.ledger.tasks_by_status(TaskStatus.BLOCKED)
             for task in blocked:
                 self.ledger.revive_blocked(task.task_id, reset_attempts=True)
@@ -483,6 +514,70 @@ class Orchestrator:
             if getattr(self, "project_dir", None) is not None:
                 git_safety.release_lock(self.project_dir, self.run_id)
             set_current_run(None)
+
+    def _verify_and_record(self, task: Task, handoff: Handoff) -> bool:
+        """Verify one submitted handoff and finalize its verdict — the single
+        path from "executor submitted" to "ledger has a verdict".
+
+        Shared by the drive loop (normal flow) and resume_run's stranded-task
+        healing (a crash between submit_for_review and record_verdict leaves a
+        task in PENDING_REVIEW; on resume this same method finishes the
+        interrupted step). Includes the dispute/arbitration flow and the
+        existing-project checkpoint commit, so a healed task gets exactly the
+        treatment an uninterrupted one would have gotten.
+        """
+        report = self.verifier.verify(task, handoff)
+
+        if self._dispute_eligible(task, report):
+            passed, reason = self._run_dispute_flow(task, handoff, report)
+        else:
+            passed, reason = report.passed, _feedback_reason(report)
+
+        # Existing-project mode (contract Addendum 4 §14): this is the
+        # single point both the plain-verify-pass path and the dispute/
+        # arbitration-overturn path funnel through before record_verdict
+        # — the one true "this task is finalized as a pass" moment. One
+        # commit per task, only on a real pass, never an empty commit
+        # (git_safety.commit_all no-ops if nothing changed).
+        # getattr-guarded: other test suites (tests/test_orchestrator.py,
+        # foreman/mocks.py) build an Orchestrator via __new__ and never
+        # set project_dir at all — those must see a plain no-op here,
+        # exactly as if project_dir had defaulted to None.
+        if getattr(self, "project_dir", None) is not None and passed:
+            # The checkpoint commit is an audit-trail guarantee, not the
+            # correctness mechanism — the task already passed real
+            # verification. A commit failure here (e.g. a host-level git
+            # problem) must be surfaced loudly, but must never unwind an
+            # already-earned DONE: that would make the code disappear from
+            # the ledger's view while it still sits, unrecorded, on disk.
+            try:
+                git_safety.commit_all(
+                    self.project_dir,
+                    f"Foreman: {task.task_id} {task.title}",
+                    expected_branch=self.project_branch,
+                )
+            except git_safety.GitSafetyError as exc:
+                self._emit(
+                    "checkpoint_failed",
+                    task_id=task.task_id,
+                    detail={"message": str(exc)},
+                )
+
+        new_status = self.ledger.record_verdict(task.task_id, passed=passed, reason=reason)
+        self._emit(
+            "verdict",
+            task_id=task.task_id,
+            detail={
+                "passed": passed,
+                "new_status": new_status.value,
+                "reason": reason,
+                "coverage_rate": report.coverage_rate,
+            },
+        )
+
+        print(f"  {status_wall(self.ledger)}   {task.task_id} "
+              f"{'PASS' if passed else f'REJECT ({new_status.value})'}")
+        return passed
 
     def _drive_loop(self) -> dict:
         """The claim -> execute -> submit -> verify -> (dispute) -> record
@@ -548,57 +643,7 @@ class Orchestrator:
             self.ledger.submit_for_review(task.task_id, worker_id, handoff)
             self._emit("submit", task_id=task.task_id, detail={"outcome": handoff.outcome})
 
-            report = self.verifier.verify(task, handoff)
-
-            if self._dispute_eligible(task, report):
-                passed, reason = self._run_dispute_flow(task, handoff, report)
-            else:
-                passed, reason = report.passed, _feedback_reason(report)
-
-            # Existing-project mode (contract Addendum 4 §14): this is the
-            # single point both the plain-verify-pass path and the dispute/
-            # arbitration-overturn path funnel through before record_verdict
-            # — the one true "this task is finalized as a pass" moment. One
-            # commit per task, only on a real pass, never an empty commit
-            # (git_safety.commit_all no-ops if nothing changed).
-            # getattr-guarded: other test suites (tests/test_orchestrator.py,
-            # foreman/mocks.py) build an Orchestrator via __new__ and never
-            # set project_dir at all — those must see a plain no-op here,
-            # exactly as if project_dir had defaulted to None.
-            if getattr(self, "project_dir", None) is not None and passed:
-                # The checkpoint commit is an audit-trail guarantee, not the
-                # correctness mechanism — the task already passed real
-                # verification. A commit failure here (e.g. a host-level git
-                # problem) must be surfaced loudly, but must never unwind an
-                # already-earned DONE: that would make the code disappear from
-                # the ledger's view while it still sits, unrecorded, on disk.
-                try:
-                    git_safety.commit_all(
-                        self.project_dir,
-                        f"Foreman: {task.task_id} {task.title}",
-                        expected_branch=self.project_branch,
-                    )
-                except git_safety.GitSafetyError as exc:
-                    self._emit(
-                        "checkpoint_failed",
-                        task_id=task.task_id,
-                        detail={"message": str(exc)},
-                    )
-
-            new_status = self.ledger.record_verdict(task.task_id, passed=passed, reason=reason)
-            self._emit(
-                "verdict",
-                task_id=task.task_id,
-                detail={
-                    "passed": passed,
-                    "new_status": new_status.value,
-                    "reason": reason,
-                    "coverage_rate": report.coverage_rate,
-                },
-            )
-
-            print(f"  {status_wall(self.ledger)}   {task.task_id} "
-                  f"{'PASS' if passed else f'REJECT ({new_status.value})'}")
+            self._verify_and_record(task, handoff)
 
         elapsed = time.monotonic() - start
         counts = self.ledger.counts()

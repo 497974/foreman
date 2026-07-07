@@ -366,3 +366,37 @@ def test_resume_run_rederives_project_dir_and_branch(tmp_path):
     assert fresh.executor.workspace is fresh.workspace
     assert _current_branch(repo) == expected_branch
     assert orch.ledger.get_task("T2").status == TaskStatus.DONE
+
+
+def test_resume_heals_task_stranded_in_pending_review(tmp_path):
+    """Found live: a network error killed the verifier's LLM call AFTER
+    submit_for_review but BEFORE record_verdict — the task froze in
+    PENDING_REVIEW with no claim to expire, and a resumed run stalled forever
+    with 0 claims. resume_run must finish the interrupted step: re-verify the
+    durably-stored handoff and record a real verdict."""
+    orch = _build_orchestrator(tmp_path, project_dir=None)
+
+    stranded = Task(
+        task_id="T9", title="stranded task", description="was mid-verification",
+        acceptance_criteria=["it works"], test_strategy="pytest -q",
+    )
+    orch.ledger.create_run("heal test")
+    orch.ledger.add_tasks([stranded])
+    orch.ledger.recompute_ready()
+    claimed = orch.ledger.claim_next("w1")
+    assert claimed.task_id == "T9"
+    handoff = orch.executor.execute(claimed, [])
+    orch.ledger.submit_for_review("T9", "w1", handoff)
+    # simulate the crash: NO record_verdict — task is now PENDING_REVIEW
+    assert orch.ledger.get_task("T9").status == TaskStatus.PENDING_REVIEW
+
+    summary = orch.resume_run(orch.run_id)
+
+    # FakeVerifier passes everything, so the healed task must be DONE and
+    # the run complete — without the healing, this stalls at 0 claims with
+    # T9 still PENDING_REVIEW forever.
+    assert orch.ledger.get_task("T9").status == TaskStatus.DONE
+    assert summary["complete"] is True
+
+    events = [json.loads(l) for l in orch.events_path.read_text(encoding="utf-8").strip().splitlines()]
+    assert any(e["type"] == "reverify" and e["task_id"] == "T9" for e in events)
