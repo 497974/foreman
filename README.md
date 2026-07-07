@@ -316,7 +316,13 @@ including the `--force-dirty` escape hatch.
       lock, force-dirty work snapshotted as its own labeled commit
 - [x] `search_files` executor tool — content search (grep) so the executor
       orients in a real codebase before editing instead of reading it wholesale
-- [x] Test suite green (231 tests, no API key required)
+- [x] `web_search` executor tool — live internet search (DuckDuckGo, no key),
+      failures come back as readable tool results, never crashes
+- [x] Pluggable executor backends: native tool-loop (default), Alibaba's
+      qwen-code CLI, and NousResearch's **hermes-agent** — plus Foreman
+      registered as a Hermes *skill*, so the integration runs both ways
+      (see [docs/HERMES.md](docs/HERMES.md))
+- [x] Test suite green (238 tests, no API key required)
 - [ ] 20-item full-checklist evaluation (quota-gated — needs a live
       DashScope run against `demo/requirements_full.md`)
 - [ ] Function Compute deployment proof (steps are written in

@@ -26,6 +26,7 @@ makes "we swapped in Alibaba's own coding agent and nothing else changed" true.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -52,8 +53,17 @@ def _qwen_prompt(task: Task, dependency_handoffs: list[Handoff]) -> str:
     if task.acceptance_criteria:
         parts.append("It must satisfy: " + "; ".join(task.acceptance_criteria) + ".")
     if task.test_strategy.strip():
+        # The gate command is run VERBATIM by the verifier. Spell out the one
+        # trap observed live with hermes-agent: the gate selected
+        # `file.py::test_name` (a module-level pytest function), the agent
+        # wrote a unittest-style class instead, and pytest's selector matched
+        # nothing — three functionally-correct attempts rejected on exit 4.
         parts.append(
-            f"Also create the necessary test file(s) so that `{task.test_strategy}` passes."
+            f"Also create the test file(s) such that this exact command exits 0: "
+            f"`{task.test_strategy}`. If that command selects a specific test id "
+            "(file::test_name), define a TOP-LEVEL pytest function with exactly "
+            "that name — not a unittest class method. Run the exact command "
+            "yourself to confirm before finishing."
         )
     if dependency_handoffs:
         deps: list[str] = []
@@ -218,13 +228,117 @@ class QwenCodeBackend:
         )
 
 
+def find_hermes_bin() -> Optional[str]:
+    """Locate the hermes-agent CLI (``FOREMAN_HERMES_BIN`` overrides the PATH)."""
+    return os.environ.get("FOREMAN_HERMES_BIN") or shutil.which("hermes")
+
+
+class HermesBackend:
+    """Runs one task by shelling out to NousResearch's hermes-agent CLI
+    (github.com/NousResearch/hermes-agent, MIT) in headless mode.
+
+    Same delegation shape as QwenCodeBackend — Hermes is a full autonomous
+    agent (persistent memory, self-written skills, web access) and Foreman is
+    the management layer that feeds it ONE verified task at a time. `hermes -z`
+    is its pure single-prompt mode ("prompt in, final text out"); `--yolo`
+    auto-approves tool use, without which a headless agent narrates instead of
+    acting (the exact failure mode QwenCodeBackend documents above).
+
+    Model routing: Hermes reads its provider from ``~/.hermes/config.yaml``
+    (one-time setup — see scripts/setup_hermes.py, which points it at the same
+    DashScope OpenAI-compatible endpoint Foreman uses) and honors the
+    ``HERMES_INFERENCE_MODEL`` env var per invocation, so Foreman's per-role
+    model choice still applies. The process cwd IS the workspace — Hermes
+    operates on the shell cwd, mirroring the no-flag lesson from qwen-code.
+    """
+
+    def __init__(
+        self,
+        settings,
+        workspace: Workspace,
+        model: Optional[str] = None,
+        timeout_s: float = 1000.0,
+        bin_path: Optional[str] = None,
+    ):
+        self.settings = settings
+        self.workspace = workspace
+        self.model = model or getattr(settings, "executor_model", "qwen3-coder-flash")
+        self.timeout_s = timeout_s
+        self.bin = bin_path or find_hermes_bin()
+        if not self.bin:
+            raise RuntimeError(
+                "hermes-agent CLI not found. Install it (Windows PowerShell: "
+                "`iex (irm https://hermes-agent.nousresearch.com/install.ps1)`) "
+                "or set FOREMAN_HERMES_BIN to its path, then run "
+                "`python scripts/setup_hermes.py` once to point it at DashScope."
+            )
+
+    def execute(self, task: Task, dependency_handoffs: list[Handoff]) -> Handoff:
+        prompt = _qwen_prompt(task, dependency_handoffs)  # same flowing-imperative shape
+        root = self.workspace.root
+        env = {
+            **os.environ,
+            "OPENAI_API_KEY": self.settings.api_key,
+            "HERMES_INFERENCE_MODEL": self.model,
+        }
+        # -z is already the pure single-prompt mode ("prompt in, final text
+        # out"); --quiet is NOT a valid top-level flag (exit 2 on a real
+        # 0.18.0 install — it belongs to subcommands only), so it stays off.
+        cmd = [self.bin, "-z", prompt, "--yolo"]
+
+        before = _snapshot(root)
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                cmd, cwd=str(root), env=env, capture_output=True,
+                # Same Windows cp1252 guard as qwen-code: agent CLIs emit UTF-8.
+                encoding="utf-8", errors="replace",
+                timeout=self.timeout_s,
+            )
+            exit_code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out, exit_code = True, -1
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        after = _snapshot(root)
+
+        changed = _changed_files(before, after)
+        handoff = _build_handoff(
+            task, exit_code, timed_out, stdout or "", stderr or "", changed,
+        )
+        handoff.handoff_reason = f"hermes backend (exit={exit_code})"
+
+        # Caught live: when the model endpoint 403s (quota exhausted), hermes
+        # prints the HTTP error as its "final answer" and exits 0 — which
+        # _build_handoff reads as SUCCESS. That false success then costs a
+        # real verifier call and a retry-budget slot per attempt, three times,
+        # for work that never happened. An exit-0 run that changed NOTHING
+        # and whose output is an HTTP/quota error is a crash, not a result.
+        if (
+            handoff.outcome == AttemptOutcome.SUCCESS.value
+            and not changed
+            and re.search(
+                r"HTTP [45]\d\d|quota has been exhausted|invalid api-key",
+                stdout or "", re.IGNORECASE,
+            )
+        ):
+            handoff.outcome = AttemptOutcome.CRASHED.value
+            handoff.gotchas = [f"hermes returned an API error instead of work: {(stdout or '').strip()[:300]}"]
+            handoff.completed_work = []
+        return handoff
+
+
 def make_executor(settings, workspace: Workspace, client) -> ExecutorBackend:
     """Build the executor named by ``settings.executor_backend`` (default native).
 
     'native'   -> the hand-written tool-loop Executor (pure Python, default).
     'qwen-code'-> delegate to the qwen-code CLI (opt-in; needs Node.js + the CLI).
+    'hermes'   -> delegate to NousResearch's hermes-agent CLI (opt-in; see
+                  scripts/setup_hermes.py for the one-time DashScope wiring).
     """
     name = (getattr(settings, "executor_backend", "native") or "native").strip().lower()
     if name in ("qwen-code", "qwen_code", "qwencode"):
         return QwenCodeBackend(settings, workspace)
+    if name in ("hermes", "hermes-agent", "hermes_agent"):
+        return HermesBackend(settings, workspace)
     return Executor(client, settings.executor_model, workspace)

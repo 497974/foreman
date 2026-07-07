@@ -22,6 +22,7 @@ import re
 from .llm import create_with_fallback
 from .models import AttemptOutcome, Handoff, Task
 from .telemetry import METER
+from .websearch import web_search
 from .workspace import Workspace, WorkspaceError
 
 # Tools exposed to the model. `done` ends the loop; the other four map 1:1
@@ -95,6 +96,23 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "web_search",
+            "description": (
+                "Search the web (DuckDuckGo, no key needed). Returns up to 5 "
+                "results as title/url/snippet. Use when the task needs facts "
+                "you don't have — current data, library versions, API shapes. "
+                "Results are for orientation; verify anything you rely on."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "run_command",
             "description": "Run a shell command with cwd at the workspace root. Use this to run tests / linters / the verification command.",
             "parameters": {
@@ -129,8 +147,12 @@ _TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
 SYSTEM_PROMPT = """You are an autonomous software executor working inside a sandboxed workspace.
 
 Work ONLY inside the workspace via the tools you have been given — read_file,
-write_file, list_dir, search_files, run_command. Never claim to have done
-something you did not actually do through a tool call.
+write_file, list_dir, search_files, web_search, run_command. Never claim to
+have done something you did not actually do through a tool call.
+
+web_search reaches the live internet: use it when the task needs facts you
+do not reliably know (current data, versions, API shapes). Do not paste
+search snippets into code as truth — verify anything load-bearing.
 
 When working in an existing codebase, ORIENT before you edit: use
 search_files to find where the relevant symbol, route, or config actually
@@ -249,6 +271,8 @@ def _tool_result_str(
         return "\n".join(entries) if entries else "(empty directory)"
     if name == "search_files":
         return workspace.search_files(args["pattern"], args.get("path", "."))
+    if name == "web_search":
+        return web_search(args["query"])
     if name == "run_command":
         result = workspace.run(args["command"], timeout=timeout)
         stdout = result.stdout

@@ -154,3 +154,103 @@ def test_qwen_backend_execute_timeout(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     handoff = QwenCodeBackend(_FakeSettings(), ws, timeout_s=1).execute(_task(), [])
     assert handoff.outcome == AttemptOutcome.TIMEOUT.value
+
+
+# ---- HermesBackend ---------------------------------------------------------
+
+
+def test_make_executor_hermes(tmp_path, monkeypatch):
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    s = _FakeSettings()
+    s.executor_backend = "hermes"
+    ex = backends.make_executor(s, Workspace(tmp_path / "ws"), client=None)
+    assert isinstance(ex, backends.HermesBackend)
+
+
+def test_hermes_backend_missing_binary_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: None)
+    import pytest
+    with pytest.raises(RuntimeError, match="hermes-agent CLI not found"):
+        backends.HermesBackend(_FakeSettings(), Workspace(tmp_path / "ws"))
+
+
+def test_hermes_backend_execute_success(tmp_path, monkeypatch):
+    """Scripted subprocess: 'hermes' run exits 0 and writes a file; the
+    handoff must be SUCCESS with the changed file detected by snapshot diff,
+    and the invocation must use headless flags (-z --yolo --quiet) with cwd
+    at the workspace root and the model passed via HERMES_INFERENCE_MODEL."""
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    ws = Workspace(tmp_path / "ws")
+    seen = {}
+
+    def fake_run(cmd, cwd=None, env=None, **kw):
+        seen["cmd"], seen["cwd"], seen["env"] = cmd, cwd, env
+        (ws.root / "made_by_hermes.py").write_text("x = 1\n", encoding="utf-8")
+        import subprocess as sp
+        return sp.CompletedProcess(cmd, 0, stdout="did the thing\n", stderr="")
+
+    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    backend = backends.HermesBackend(_FakeSettings(), ws)
+    task = _task()
+    h = backend.execute(task, [])
+
+    assert h.outcome == AttemptOutcome.SUCCESS.value
+    assert "made_by_hermes.py" in h.files_touched
+    assert seen["cmd"][0] == "hermes" and "-z" in seen["cmd"]
+    assert "--yolo" in seen["cmd"] and "--quiet" not in seen["cmd"]
+    assert seen["cwd"] == str(ws.root)
+    assert seen["env"]["HERMES_INFERENCE_MODEL"] == _FakeSettings().executor_model
+    assert "hermes backend" in h.handoff_reason
+
+
+def test_hermes_backend_execute_timeout(tmp_path, monkeypatch):
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    ws = Workspace(tmp_path / "ws")
+
+    def fake_run(cmd, **kw):
+        import subprocess as sp
+        raise sp.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
+    assert h.outcome == AttemptOutcome.TIMEOUT.value
+
+
+def test_hermes_backend_api_error_with_no_changes_is_crashed(tmp_path, monkeypatch):
+    """Caught live: on a 403 (quota exhausted) hermes prints the HTTP error
+    as its final answer and exits 0 — a false SUCCESS that burned a verifier
+    call and a retry slot per attempt. Exit 0 + zero changed files + an
+    HTTP/quota error in stdout must be classified CRASHED."""
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    ws = Workspace(tmp_path / "ws")
+
+    def fake_run(cmd, **kw):
+        import types as t
+        return t.SimpleNamespace(
+            returncode=0,
+            stdout="HTTP 403: The free quota has been exhausted. To continue...",
+            stderr="",
+        )
+
+    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
+    assert h.outcome == AttemptOutcome.CRASHED.value
+    assert h.files_touched == []
+    assert "API error" in h.gotchas[0]
+
+
+def test_hermes_backend_exit0_with_real_changes_stays_success(tmp_path, monkeypatch):
+    """The inverse guard: a run that actually wrote files stays SUCCESS even
+    if its narration happens to mention an HTTP error string."""
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    ws = Workspace(tmp_path / "ws")
+
+    def fake_run(cmd, **kw):
+        (ws.root / "real_work.py").write_text("x = 1\n", encoding="utf-8")
+        import types as t
+        return t.SimpleNamespace(returncode=0, stdout="retried after HTTP 429, then finished", stderr="")
+
+    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
+    assert h.outcome == AttemptOutcome.SUCCESS.value
+    assert "real_work.py" in h.files_touched
