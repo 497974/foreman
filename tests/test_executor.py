@@ -14,9 +14,34 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from foreman.executor import Executor
+from foreman.executor import Executor, _as_str_list
 from foreman.models import AttemptOutcome, Handoff, Task
 from foreman.workspace import Workspace
+
+
+# ---- _as_str_list: robustness to models that mis-fill array fields ----------
+
+
+def test_as_str_list_passes_a_clean_list_through():
+    assert _as_str_list(["app.py", "test_req02.py"]) == ["app.py", "test_req02.py"]
+
+
+def test_as_str_list_splits_a_markdown_bulleted_string():
+    # The exact shape qwen3-coder-flash produced live: a single string in an
+    # array field, newline-and-bullet delimited. Left literal, this poisoned
+    # the verifier (it read files named "- app.py") and false-rejected a task
+    # whose pytest gate had already passed.
+    assert _as_str_list("\n- app.py\n- test_req02.py\n") == ["app.py", "test_req02.py"]
+
+
+def test_as_str_list_strips_numbered_and_star_bullets():
+    assert _as_str_list("1. first\n2) second\n* third") == ["first", "second", "third"]
+
+
+def test_as_str_list_drops_blank_entries_and_handles_none():
+    assert _as_str_list(["", "  ", "keep"]) == ["keep"]
+    assert _as_str_list(None) == []
+    assert _as_str_list(42) == []
 
 
 def make_task(**kw) -> Task:

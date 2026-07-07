@@ -17,6 +17,7 @@ foreman/verifier.py — the executor's job is to attempt, not to grade itself.
 from __future__ import annotations
 
 import json
+import re
 
 from .llm import create_with_fallback
 from .models import AttemptOutcome, Handoff, Task
@@ -196,6 +197,39 @@ def _user_message(task: Task, dependency_handoffs: list[Handoff]) -> str:
     return _task_card(task) + "\n" + _handoffs_section(dependency_handoffs)
 
 
+def _as_str_list(value) -> list[str]:
+    """Coerce a `done`-tool array field to a clean ``list[str]``.
+
+    The `done` tool declares completed_work/files_touched/gotchas/self_check
+    as JSON arrays, but weaker models do not always honor that. Caught live
+    with qwen3-coder-flash: it filled ``files_touched`` with a single
+    markdown-bulleted STRING — ``"\\n- app.py\\n- test_req02.py\\n"`` — instead
+    of ``["app.py", "test_req02.py"]``. Taken literally that is catastrophic
+    downstream: the verifier reads ``files_touched`` to fetch the evidence
+    files it scores against, iterating a string yields *characters*, so it
+    tries to read files named ``"-"``, ``" "``, ``"a"`` … finds none, and
+    rejects a task whose objective gate (pytest) already passed — a false
+    rejection that burns the retry budget and blocks the task.
+
+    Normalize defensively: a real list is stripped of blank entries; a string
+    is split on newlines with leading markdown bullets / ``1.`` numbering
+    removed; anything else becomes ``[]`` (matching the old ``.get(..., [])``
+    default).
+    """
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+    if isinstance(value, str):
+        out: list[str] = []
+        for line in value.splitlines():
+            s = re.sub(r"^\s*[-*+•]\s*", "", line)  # markdown bullet
+            s = re.sub(r"^\s*\d+[.)]\s*", "", s)          # "1. " / "1) "
+            s = s.strip()
+            if s:
+                out.append(s)
+        return out
+    return []
+
+
 def _tool_result_str(
     name: str, workspace: Workspace, args: dict, timeout: float = 120.0
 ) -> str:
@@ -361,10 +395,10 @@ class Executor:
                         task_id=task.task_id,
                         attempt_no=task.attempt_count,
                         outcome=AttemptOutcome.SUCCESS.value,
-                        completed_work=args.get("completed_work", []),
-                        files_touched=args.get("files_touched", []),
-                        gotchas=args.get("gotchas", []),
-                        self_check=args.get("self_check", []),
+                        completed_work=_as_str_list(args.get("completed_work")),
+                        files_touched=_as_str_list(args.get("files_touched")),
+                        gotchas=_as_str_list(args.get("gotchas")),
+                        self_check=_as_str_list(args.get("self_check")),
                         handoff_reason=args.get("summary", "completed"),
                     )
                     messages.append(
