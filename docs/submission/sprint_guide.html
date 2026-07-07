@@ -1,0 +1,391 @@
+<style>
+  :root {
+    --paper:#f4f2ee; --panel:#ffffff; --panel-2:#faf8f3;
+    --ink:#1c2530; --ink-soft:#5b6672; --line:#ddd8cc;
+    --steel:#1E4E79; --steel-deep:#163a5c; --steel-soft:#e7eef4;
+    --orange:#D9700A; --orange-soft:#f6d9bd;
+    --good:#2f8f42; --good-bg:#e6f4ea;
+    --warn:#9a6a00; --warn-bg:#fbf0d4;
+    --bad:#b5362a; --bad-bg:#f9e6e3;
+    --code-bg:#141c26; --code-fg:#e6edf3; --code-tok:#f2a35c;
+    --sans:"Segoe UI",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:"Cascadia Code",Consolas,"SFMono-Regular",ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#12181f; --panel:#1a222b; --panel-2:#212b35;
+      --ink:#e9edf1; --ink-soft:#9aa6b2; --line:#2c3742;
+      --steel:#5b8fbd; --steel-deep:#3f6d94; --steel-soft:#1c2a38;
+      --orange:#f0a35f; --orange-soft:#3a2c1c;
+      --good:#54c878; --good-bg:#16281d;
+      --warn:#e2ba54; --warn-bg:#2a2213;
+      --bad:#ec7466; --bad-bg:#2c1815;
+      --code-bg:#0c1219; --code-fg:#e6edf3; --code-tok:#f2a35c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#12181f; --panel:#1a222b; --panel-2:#212b35;
+    --ink:#e9edf1; --ink-soft:#9aa6b2; --line:#2c3742;
+    --steel:#5b8fbd; --steel-deep:#3f6d94; --steel-soft:#1c2a38;
+    --orange:#f0a35f; --orange-soft:#3a2c1c;
+    --good:#54c878; --good-bg:#16281d;
+    --warn:#e2ba54; --warn-bg:#2a2213;
+    --bad:#ec7466; --bad-bg:#2c1815;
+    --code-bg:#0c1219; --code-fg:#e6edf3; --code-tok:#f2a35c;
+  }
+  :root[data-theme="light"] {
+    --paper:#f4f2ee; --panel:#ffffff; --panel-2:#faf8f3;
+    --ink:#1c2530; --ink-soft:#5b6672; --line:#ddd8cc;
+    --steel:#1E4E79; --steel-deep:#163a5c; --steel-soft:#e7eef4;
+    --orange:#D9700A; --orange-soft:#f6d9bd;
+    --good:#2f8f42; --good-bg:#e6f4ea; --warn:#9a6a00; --warn-bg:#fbf0d4;
+    --bad:#b5362a; --bad-bg:#f9e6e3;
+    --code-bg:#141c26; --code-fg:#e6edf3; --code-tok:#f2a35c;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; }
+  .wrap {
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    line-height:1.6; min-height:100vh; padding-bottom:80px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .container { max-width:920px; margin:0 auto; padding:0 20px; }
+
+  /* sticky top bar */
+  .topbar {
+    position:sticky; top:0; z-index:50;
+    background:var(--steel-deep); color:#fff;
+    border-bottom:3px solid var(--orange);
+  }
+  .topbar-inner { max-width:920px; margin:0 auto; padding:12px 20px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .topbar .hat { font-size:22px; }
+  .topbar h1 { font-size:16px; margin:0; font-weight:700; letter-spacing:.3px; }
+  .topbar .deadline {
+    margin-left:auto; font-size:12.5px; font-family:var(--mono);
+    background:var(--orange); color:#241300; padding:3px 10px; border-radius:20px; font-weight:600;
+  }
+  .progress-track { height:5px; background:rgba(255,255,255,.18); }
+  .progress-fill { height:100%; width:0%; background:var(--orange); transition:width .3s ease; }
+  .theme-btn { background:rgba(255,255,255,.14); color:#fff; border:0; border-radius:6px;
+    padding:4px 9px; font-size:12px; cursor:pointer; font-family:var(--mono); }
+
+  /* hero */
+  .hero { padding:34px 0 12px; }
+  .hero .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--orange); font-weight:600; }
+  .hero h2 { font-size:30px; margin:6px 0 10px; letter-spacing:-.4px; text-wrap:balance; }
+  .hero p { color:var(--ink-soft); font-size:15px; max-width:64ch; margin:0; }
+
+  /* the one critical reality */
+  .reality {
+    margin:22px 0 8px; background:var(--warn-bg); border:1px solid var(--warn);
+    border-left:5px solid var(--warn); border-radius:10px; padding:16px 18px;
+  }
+  .reality b { color:var(--warn); }
+  .reality .r-title { font-weight:700; margin-bottom:6px; display:flex; gap:8px; align-items:center; }
+  .reality ul { margin:8px 0 0; padding-left:20px; }
+  .reality li { margin:4px 0; font-size:14px; }
+
+  /* section */
+  .section { margin-top:40px; }
+  .sec-head { display:flex; align-items:baseline; gap:14px; border-bottom:2px solid var(--line);
+    padding-bottom:12px; margin-bottom:8px; }
+  .sec-num {
+    font-family:var(--mono); font-size:34px; font-weight:700; color:var(--steel);
+    line-height:1; letter-spacing:-1px;
+  }
+  .sec-titles h3 { margin:0; font-size:21px; letter-spacing:-.2px; }
+  .sec-titles .sub { color:var(--ink-soft); font-size:13.5px; margin-top:2px; }
+  .sec-time { margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--ink-soft);
+    white-space:nowrap; align-self:center; }
+
+  /* step */
+  .step { display:flex; gap:14px; padding:16px 0; border-bottom:1px solid var(--line); }
+  .step:last-child { border-bottom:0; }
+  .chk {
+    flex:0 0 auto; width:24px; height:24px; margin-top:2px; border-radius:6px;
+    border:2px solid var(--steel); background:var(--panel); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:15px; color:#fff;
+    transition:background .15s, border-color .15s; user-select:none;
+  }
+  .chk.done { background:var(--good); border-color:var(--good); }
+  .chk.done::after { content:"✓"; font-weight:700; }
+  .step-body { flex:1 1 auto; min-width:0; }
+  .step-body h4 { margin:1px 0 4px; font-size:15.5px; }
+  .step-body h4 .t { font-family:var(--mono); font-size:11.5px; color:var(--orange);
+    border:1px solid var(--orange-soft); border-radius:5px; padding:1px 6px; margin-left:8px;
+    vertical-align:middle; font-weight:400; }
+  .step-body p { margin:0 0 6px; font-size:14px; color:var(--ink); }
+  .step-body p.note { color:var(--ink-soft); font-size:13px; }
+  .step.done h4 { text-decoration:line-through; text-decoration-color:var(--ink-soft); opacity:.6; }
+
+  /* narration table for the video shots */
+  .shots { border:1px solid var(--line); border-radius:10px; overflow:hidden; margin:6px 0; }
+  .shot { display:grid; grid-template-columns:64px 1fr; border-top:1px solid var(--line); }
+  .shot:first-child { border-top:0; }
+  .shot .tc { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--steel);
+    background:var(--steel-soft); padding:10px 8px; text-align:center; }
+  .shot .sd { padding:10px 12px; font-size:13.3px; }
+  .shot .sd .say { color:var(--ink-soft); font-style:italic; display:block; margin-top:3px; }
+  .shot .sd .say::before { content:"口播： "; font-style:normal; color:var(--orange); font-weight:600; }
+
+  /* callouts */
+  .call { border-radius:9px; padding:11px 14px; margin:8px 0; font-size:13.3px; border:1px solid; }
+  .call.tip { background:var(--steel-soft); border-color:var(--steel); }
+  .call.warn { background:var(--warn-bg); border-color:var(--warn); }
+  .call.bad { background:var(--bad-bg); border-color:var(--bad); }
+  .call b { color:inherit; }
+  .call .k { font-weight:700; }
+  .call.tip .k { color:var(--steel); } .call.warn .k { color:var(--warn); } .call.bad .k { color:var(--bad); }
+
+  /* code / copy */
+  .cmd { position:relative; background:var(--code-bg); color:var(--code-fg);
+    border-radius:8px; padding:11px 40px 11px 13px; margin:7px 0; overflow-x:auto; }
+  .cmd code { font-family:var(--mono); font-size:12.8px; white-space:pre; }
+  .cmd .tok { color:var(--code-tok); }
+  .copy { position:absolute; top:7px; right:7px; background:rgba(255,255,255,.1); color:#cdd6df;
+    border:0; border-radius:5px; padding:3px 8px; font-size:11px; cursor:pointer; font-family:var(--mono); }
+  .copy:hover { background:rgba(255,255,255,.22); }
+  kbd { font-family:var(--mono); font-size:12px; background:var(--panel-2); border:1px solid var(--line);
+    border-bottom-width:2px; border-radius:4px; padding:1px 6px; }
+  .path { font-family:var(--mono); font-size:12.5px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:4px; padding:1px 6px; word-break:break-all; }
+
+  .foot { margin-top:44px; padding-top:18px; border-top:2px solid var(--line);
+    color:var(--ink-soft); font-size:12.5px; }
+  a { color:var(--steel); }
+  :focus-visible { outline:2px solid var(--orange); outline-offset:2px; }
+  @media (max-width:560px){ .sec-time{display:none;} .hero h2{font-size:24px;} }
+</style>
+
+<div class="wrap">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <span class="hat">👷</span>
+      <h1>Foreman 参赛冲刺 · 拍视频 + 部署 FC 保姆教程</h1>
+      <button class="theme-btn" id="themeBtn" type="button">◐ 主题</button>
+      <span class="deadline">目标：明日提交</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progFill"></div></div>
+  </div>
+
+  <div class="container">
+    <div class="hero">
+      <div class="eyebrow">Qwen Cloud Hackathon · Track 3</div>
+      <h2>把三件事做完，就能交件</h2>
+      <p>① 录一段 3 分钟 demo 视频　② 把后端部署到阿里云 FC 并录 30–60 秒证明　③ 填 Devpost 表。下面每一步都能打勾，进度自动记住。命令点一下就复制。</p>
+    </div>
+
+    <div class="reality">
+      <div class="r-title">⚠️ 先记住这条，它决定视频怎么拍</div>
+      <div style="font-size:14px">Qwen 和 Gemini 的<b>免费额度都用完了</b>，所以<b>不能现场跑真实模型</b>。但完全不影响交件，因为你有两张牌：</div>
+      <ul>
+        <li><b>演示模式（Demo / mock）</b>：勾一下就跑，<b>零 Key、永远能跑</b>，用来展示全部界面机制（状态墙、协商、停止续跑、费用）。</li>
+        <li><b>已存档的真实 Qwen 记录</b>：运行列表里的 <span class="path">run_489dbb5dea0e</span> 是真实 Qwen 跑出的 5/5，还带「打回→自愈→续跑」的完整戏剧，当真实证据展示。</li>
+      </ul>
+      <div style="font-size:13px;margin-top:8px;color:var(--ink-soft)">另外：demo 视频 和 FC 部署证明录屏 是<b>两段不同的视频</b>，规则要求分开，别合成一个。</div>
+    </div>
+
+    <!-- ============ SECTION 1: VIDEO ============ -->
+    <div class="section">
+      <div class="sec-head">
+        <div class="sec-num">01</div>
+        <div class="sec-titles"><h3>录 3 分钟 Demo 视频</h3><div class="sub">讲清「是什么 + 怎么解决 + 有数据」，传 YouTube 公开</div></div>
+        <div class="sec-time">约 45 分钟</div>
+      </div>
+
+      <div class="step"><div class="chk" data-k="v1"></div><div class="step-body">
+        <h4>打开控制台，准备素材</h4>
+        <p>双击桌面 <b>Foreman</b> 图标（或在项目目录运行 <span class="path">python serve.py</span>），等浏览器打开 <span class="path">127.0.0.1:8787</span>。先点开运行列表里的 <span class="path">run_489dbb5dea0e</span> 看一眼，等下要展示它。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="v2"></div><div class="step-body">
+        <h4>打开录屏<span class="t">Win+G</span></h4>
+        <p>Windows 自带 Xbox Game Bar：按 <kbd>Win</kbd>+<kbd>G</kbd> → 点录制。或用 OBS。<b>先默念一遍下面的分镜再开录</b>，一条过最省事。</p>
+        <div class="call tip"><span class="k">建议：</span>整体控制在 3:00 以内。语速正常、别赶。字幕可选但加分。</div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="v3"></div><div class="step-body">
+        <h4>照分镜录（每格都有口播词）</h4>
+        <div class="shots">
+          <div class="shot"><div class="tc">0:00<br>0:20</div><div class="sd">黑屏/标题：抛出痛点。
+            <span class="say">给编程 AI 一张 20 条需求的清单，一小时后它说"全做完了"——其实只做了 3 条。Foreman 就是来治这个病的。</span></div></div>
+          <div class="shot"><div class="tc">0:20<br>0:50</div><div class="sd">展示架构图 <span class="path">docs/architecture.svg</span>，讲一句话闭环。
+            <span class="say">它把清单拆成一个个带测试的小任务，每个在干净上下文里执行，用真实测试验收，不过就打回重做，全程写进账本，断了能续。</span></div></div>
+          <div class="shot"><div class="tc">0:50<br>1:40</div><div class="sd">现场演示（<b>勾演示模式</b>）：贴清单 → 启动 → 状态墙灰→黄→绿。指出琥珀色 DISPUTE/ARBITRATION 徽章、停止/续跑、右上角实时费用。
+            <span class="say">看，任务在被独立验收；这个琥珀标记是执行者对判决不服在申诉，由更强的模型仲裁——多智能体协商是看得见的，不是偷偷重试。</span></div></div>
+          <div class="shot"><div class="tc">1:40<br>2:20</div><div class="sd">打开 <span class="path">run_489dbb5dea0e</span> 的记录/事件流。
+            <span class="say">这一条是真实 Qwen 模型跑的，不是演示：它一次通过 4 条，第 5 条被验收打回、熔断，续跑后自愈，最终 5/5 全绿。真实、可复查。</span></div></div>
+          <div class="shot"><div class="tc">2:20<br>2:50</div><div class="sd">展示 README 里的 A/B/C 对比表。
+            <span class="say">同一张考卷：单 agent 一次做完 0/5，顺序执行不验收 4/5，完整 Foreman 5/5。这就是相对单 agent 基线可测量的提升——正是 Track 3 要的。</span></div></div>
+          <div class="shot"><div class="tc">2:50<br>3:00</div><div class="sd">收尾：打出 GitHub 仓库地址。
+            <span class="say">开源在此，还能和 Hermes agent 双向集成。谢谢观看。</span></div></div>
+        </div>
+        <div class="call tip"><span class="k">Track 3 三要素要点到：</span>分工（规划器拆卡、调度器派活）、协商（申诉-仲裁）、可测量增益（A/B/C 表）。这三个词评委在找。</div>
+        <div class="call warn"><span class="k">别提 Gemini。</span>这是 Qwen 比赛，视频里只讲 Qwen；Gemini 只是你本地额度用完后的私人备胎，出现在视频里会减分。</div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="v4"></div><div class="step-body">
+        <h4>传 YouTube，设为 Public</h4>
+        <p>上传后，<b>等它处理完再检查一次可见性</b>——YouTube 有时会静默把它退回 Unlisted。最后用<b>无痕窗口</b>打开链接确认能看。</p>
+        <div class="call bad"><span class="k">最常见的废标原因：</span>视频设成了 Unlisted/Private，评委点开是黑的。务必 Public + 登出复验。</div>
+      </div></div>
+    </div>
+
+    <!-- ============ SECTION 2: FC DEPLOY ============ -->
+    <div class="section">
+      <div class="sec-head">
+        <div class="sec-num">02</div>
+        <div class="sec-titles"><h3>部署到阿里云 FC + 录部署证明</h3><div class="sub">证明「后端真的跑在阿里云上」——用免费额度即可</div></div>
+        <div class="sec-time">约 50 分钟</div>
+      </div>
+
+      <div class="call tip" style="margin-top:6px"><span class="k">核心思路：</span>FC 部署本身免费。部署好后<b>在云上用「演示模式」跑一次</b>就证明了后端在阿里云运行——<b>不需要任何模型额度</b>。「用了阿里云 API」这一项由代码文件链接单独满足（下方 03 步）。</div>
+
+      <div class="step"><div class="chk" data-k="f1"></div><div class="step-body">
+        <h4>确认部署包已就绪</h4>
+        <p>在项目目录跑这条，看到 <span class="path">foreman-fc.zip</span> 且大小约 4.9MB 即可（已自包含 openai 依赖，上传即用）：</p>
+        <div class="cmd"><button class="copy" type="button">复制</button><code><span class="tok">python</span> fc/build_package.py</code></div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f2"></div><div class="step-body">
+        <h4>登录阿里云国际版，切到新加坡</h4>
+        <p>打开 <a href="https://www.alibabacloud.com" target="_blank" rel="noopener">alibabacloud.com</a> 控制台，右上角地域选 <b>Singapore (ap-southeast-1)</b>（和 Foreman 调用的 DashScope 同区）。搜索 <b>Function Compute / 函数计算</b>，首次进去点「开通服务」（免费）。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f3"></div><div class="step-body">
+        <h4>创建函数：Web 函数 + 自定义运行时</h4>
+        <p>创建函数 → 类型选 <b>Web 函数（Web function）</b> → 运行时选 <b>自定义运行时（Custom Runtime）</b>，基础镜像挑一个 <b>Python 3.10+</b> 的。</p>
+        <div class="call tip"><span class="k">找不到一模一样的字？</span>不同控制台版本文字略有出入，认概念：「Web 函数」+「自定义运行时」这对组合就对了。</div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f4"></div><div class="step-body">
+        <h4>上传代码 zip</h4>
+        <p>代码上传方式选「上传 zip 包」，选 <span class="path">Foreman/fc/foreman-fc.zip</span>。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f5"></div><div class="step-body">
+        <h4>设置入口和端口</h4>
+        <p>启动命令 / 入口填 <span class="path">./fc/bootstrap</span>（若预填了 <span class="path">./bootstrap</span> 且识别不到，就改成前者）。端口填 <b>9000</b>。</p>
+        <div class="call warn"><span class="k">端口必须是 9000：</span>包里的 <span class="path">bootstrap</span> 写死了 <span class="path">serve.py --host 0.0.0.0 --port 9000</span>，控制台端口要和它一致。</div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f6"></div><div class="step-body">
+        <h4>环境变量 + 单实例</h4>
+        <p>配置 → 环境变量，加一条 <span class="path">DASHSCOPE_BASE_URL</span> = <span class="path">https://dashscope-intl.aliyuncs.com/compatible-mode/v1</span>。有 Qwen key 就再加 <span class="path">DASHSCOPE_API_KEY</span>（证明用演示模式，没有也行）。扩缩容里把<b>最大实例数设为 1</b>（保证 runs 目录会话一致）。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f7"></div><div class="step-body">
+        <h4>部署，拿公网地址</h4>
+        <p>保存/部署 → 在「触发器」标签页找到形如 <span class="path">https://xxxx.fcapp.run</span> 的公网地址。浏览器打开它，应该看到和本地一样的 Foreman 控制台。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="f8"></div><div class="step-body">
+        <h4>录 30–60 秒「部署证明」录屏</h4>
+        <p>这是<b>独立于 demo 视频</b>的一段短录屏。画面依次给到：</p>
+        <p class="note">① FC 控制台的函数配置页（能看到 <b>地域=新加坡</b>、<b>自定义运行时</b>）→ ② 那个 <span class="path">fcapp.run</span> 地址在浏览器地址栏里打开着 Foreman → ③ <b>勾演示模式跑一次</b>，状态墙变绿。这就证明「后端在阿里云上真实运行且能端到端工作」。</p>
+        <div class="call bad"><span class="k">两条红线：</span>①录屏里<b>绝不能出现 API Key</b>（环境变量页别录进去/打码）。②录完<b>立刻停掉或删除函数</b>，别让它挂着产生费用。</div>
+        <div class="call warn"><span class="k">费用守门：</span>FC 免费额度覆盖一次演示。别开高并发/预留实例。录完就停。</div>
+      </div></div>
+    </div>
+
+    <!-- ============ SECTION 3: SUBMIT ============ -->
+    <div class="section">
+      <div class="sec-head">
+        <div class="sec-num">03</div>
+        <div class="sec-titles"><h3>填 Devpost，提交</h3><div class="sub">材料我都给你备好了，粘贴即可</div></div>
+        <div class="sec-time">约 25 分钟</div>
+      </div>
+
+      <div class="step"><div class="chk" data-k="s1"></div><div class="step-body">
+        <h4>注册 Devpost，选 Track 3</h4>
+        <p>下拉框里<b>明确选中 Track 3: Agent Society</b>（正文写 Track 3 不算，下拉必须选）。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="s2"></div><div class="step-body">
+        <h4>粘贴项目描述</h4>
+        <p>打开 <span class="path">docs/submission/10_devpost_description.md</span>，整篇粘进描述框。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="s3"></div><div class="step-body">
+        <h4>贴两个视频链接</h4>
+        <p>demo 视频（YouTube 公开）+ FC 部署证明录屏，分别贴到对应位置（部署证明单独标注）。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="s4"></div><div class="step-body">
+        <h4>贴阿里云 API 使用的代码文件链接</h4>
+        <p>这两条固定链接直接复制（已钉死到某次提交，评委点开就是那份代码）：</p>
+        <div class="cmd"><button class="copy" type="button">复制</button><code>https://github.com/497974/foreman/blob/9ee78cf/foreman/config.py
+https://github.com/497974/foreman/blob/9ee78cf/foreman/llm.py</code></div>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="s5"></div><div class="step-body">
+        <h4>架构图 + 仓库地址</h4>
+        <p>架构图用 <span class="path">docs/architecture.svg</span>；仓库地址 <span class="path">github.com/497974/foreman</span>。Built-with 标签填 Qwen / DashScope / Alibaba Cloud FC / Python。</p>
+      </div></div>
+
+      <div class="step"><div class="chk" data-k="s6"></div><div class="step-body">
+        <h4>提交前最后一眼</h4>
+        <p>用<b>无痕窗口</b>打开你的 GitHub 仓库：确认是 <b>Public</b>、About 区能看到 <b>Apache-2.0</b> 徽章、README 正常渲染、页面里没有泄露任何 Key。都对 → 点提交。</p>
+        <div class="call tip"><span class="k">你已经具备的：</span>仓库 Public + Apache-2.0 ✓、架构图 ✓、代码证据 ✓、249+ 测试全绿 ✓。只差上面这几段录制和填表。</div>
+      </div></div>
+    </div>
+
+    <div class="foot">
+      进度存在你自己的浏览器里，关掉再开还在。命令块点「复制」即可。<br>
+      对应的详细底稿：<span class="path">docs/submission/10_devpost_description.md</span>（描述）、<span class="path">20_video_script.md</span>（分镜）、<span class="path">30_deployment_proof_checklist.md</span>（FC 细则）、<span class="path">docs/DEPLOY.md</span>（FC 双语全文）。
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var KEY = "foreman_sprint_progress";
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+
+    var checks = Array.prototype.slice.call(document.querySelectorAll(".chk"));
+    function updateProgress() {
+      var done = checks.filter(function (c) { return c.classList.contains("done"); }).length;
+      var pct = checks.length ? Math.round(done / checks.length * 100) : 0;
+      document.getElementById("progFill").style.width = pct + "%";
+    }
+    checks.forEach(function (c) {
+      var k = c.getAttribute("data-k");
+      if (saved[k]) { c.classList.add("done"); c.closest(".step").classList.add("done"); }
+      function toggle() {
+        c.classList.toggle("done");
+        c.closest(".step").classList.toggle("done");
+        saved[k] = c.classList.contains("done");
+        try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+        updateProgress();
+      }
+      c.addEventListener("click", toggle);
+      c.setAttribute("tabindex", "0"); c.setAttribute("role", "checkbox");
+      c.addEventListener("keydown", function (e) {
+        if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(); }
+      });
+    });
+    updateProgress();
+
+    document.querySelectorAll(".copy").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var code = b.parentElement.querySelector("code").innerText;
+        navigator.clipboard.writeText(code).then(function () {
+          var t = b.textContent; b.textContent = "已复制 ✓";
+          setTimeout(function () { b.textContent = t; }, 1400);
+        });
+      });
+    });
+
+    var root = document.documentElement, tb = document.getElementById("themeBtn");
+    tb.addEventListener("click", function () {
+      var cur = root.getAttribute("data-theme");
+      var next = cur === "dark" ? "light" : (cur === "light" ? "dark" :
+        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark"));
+      root.setAttribute("data-theme", next);
+    });
+  })();
+</script>
