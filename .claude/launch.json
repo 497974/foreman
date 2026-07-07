@@ -4,7 +4,7 @@
     {
       "name": "foreman-console",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["serve.py", "--port", "8787"],
+      "runtimeArgs": ["serve.py", "--port", "8787", "--no-browser"],
       "port": 8787
     }
   ]

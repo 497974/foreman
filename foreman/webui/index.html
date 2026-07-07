@@ -714,6 +714,86 @@
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #c9c2b4; border-radius: 5px; }
+
+  /* ---- Welcome / onboarding overlay (first visit + the ? button) ------- */
+  .welcome-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(22, 58, 92, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .welcome-overlay[hidden] { display: none; }
+  .welcome-panel {
+    background: var(--panel);
+    border-radius: 14px;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+    max-width: 980px; width: 100%; max-height: 92vh;
+    overflow-y: auto;
+    padding: 0 0 24px 0;
+  }
+  .welcome-hero {
+    background: linear-gradient(135deg, var(--steel-dark), var(--steel));
+    color: #fff; border-radius: 14px 14px 0 0;
+    padding: 28px 32px 24px 32px;
+    position: relative;
+  }
+  .welcome-hero h1 { margin: 0 0 6px 0; font-size: 26px; letter-spacing: .5px; }
+  .welcome-hero .tagline { margin: 0; font-size: 15px; opacity: .92; line-height: 1.55; }
+  .welcome-hero .hard-hat { font-size: 34px; position: absolute; top: 22px; right: 28px; }
+  .welcome-steps {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    padding: 18px 32px 6px 32px;
+  }
+  .welcome-step {
+    flex: 1 1 200px; background: var(--c-amber-bg);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; font-size: 13.5px; line-height: 1.5;
+  }
+  .welcome-step b { display: block; margin-bottom: 4px; color: var(--steel-dark); font-size: 14px; }
+  .welcome-step .stepnum {
+    display: inline-block; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--orange); color: #fff; text-align: center; line-height: 22px;
+    font-weight: 700; font-size: 12.5px; margin-right: 6px;
+  }
+  .welcome-actions { display: flex; gap: 12px; padding: 14px 32px 6px 32px; flex-wrap: wrap; }
+  .welcome-actions button {
+    border: 0; border-radius: 8px; padding: 12px 22px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .btn-demo { background: var(--orange); color: #fff; }
+  .btn-demo:hover { background: var(--orange-light); }
+  .btn-enter { background: var(--steel); color: #fff; }
+  .btn-enter:hover { background: var(--steel-light); }
+  .welcome-features-title {
+    padding: 16px 32px 2px 32px; font-size: 15px; font-weight: 700; color: var(--steel-dark);
+  }
+  .welcome-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px; padding: 10px 32px 4px 32px;
+  }
+  .feature-card {
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; background: var(--bg);
+  }
+  .feature-card h4 { margin: 0 0 5px 0; font-size: 14px; color: var(--steel-dark); }
+  .feature-card .what { font-size: 12.8px; color: var(--ink); line-height: 1.5; margin: 0 0 6px 0; }
+  .feature-card .how {
+    font-size: 12.3px; color: var(--ink-soft); line-height: 1.5; margin: 0;
+    border-left: 3px solid var(--orange-light); padding-left: 8px;
+    background: var(--panel); border-radius: 0 6px 6px 0; padding-top: 4px; padding-bottom: 4px;
+  }
+  .feature-card .how b { color: var(--orange); }
+  .welcome-foot {
+    padding: 14px 32px 0 32px; font-size: 12.5px; color: var(--ink-soft); line-height: 1.6;
+  }
+  .help-fab {
+    position: fixed; right: 18px; bottom: 18px; z-index: 900;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--orange); color: #fff; border: 0;
+    font-size: 22px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  .help-fab:hover { background: var(--orange-light); }
 </style>
 
 <header>
@@ -828,6 +908,48 @@
   <div class="drawer-body" id="drawer-body"></div>
 </div>
 
+<!-- Welcome / onboarding overlay: auto-shows on first visit; ? button reopens -->
+<div class="welcome-overlay" id="welcome-overlay" hidden>
+  <div class="welcome-panel">
+    <div class="welcome-hero">
+      <span class="hard-hat">👷</span>
+      <h1 data-i18n="wTitle">Foreman — your AI foreman</h1>
+      <p class="tagline" data-i18n="wTagline">Give it a long requirements list. It plans the work, hires an AI to build each piece, REFUSES to accept anything that fails a real test, and keeps going until everything is green — even across crashes.</p>
+    </div>
+
+    <div class="welcome-steps">
+      <div class="welcome-step"><b><span class="stepnum">1</span><span data-i18n="wStep1T">Paste your list</span></b><span data-i18n="wStep1B">Type requirements one per line in "New Run" — or pick a ready-made template.</span></div>
+      <div class="welcome-step"><b><span class="stepnum">2</span><span data-i18n="wStep2T">Press Start</span></b><span data-i18n="wStep2B">Watch the status wall: each cell is one task going grey → amber → green.</span></div>
+      <div class="welcome-step"><b><span class="stepnum">3</span><span data-i18n="wStep3T">Collect the goods</span></b><span data-i18n="wStep3B">When all cells are green, download the finished code as a zip. Every item was proven by a real test.</span></div>
+    </div>
+
+    <div class="welcome-actions">
+      <button type="button" class="btn-demo" id="welcome-demo-btn" data-i18n="wDemoBtn">▶ Try a free demo first (no key, no cost)</button>
+      <button type="button" class="btn-enter" id="welcome-enter-btn" data-i18n="wEnterBtn">Start using Foreman</button>
+    </div>
+
+    <div class="welcome-features-title" data-i18n="wFeaturesTitle">Everything it can do — and how to use each one</div>
+    <div class="welcome-grid">
+      <div class="feature-card"><h4>📝 <span data-i18n="wF1T">New Run</span></h4><p class="what" data-i18n="wF1W">Turns a requirements list into a fully built, fully tested project.</p><p class="how" data-i18n="wF1H">HOW: left panel → paste your list (one item per line) → Start Foreman.</p></div>
+      <div class="feature-card"><h4>🎬 <span data-i18n="wF2T">Demo mode</span></h4><p class="what" data-i18n="wF2W">The whole product with fake workers — zero API key, zero cost, offline.</p><p class="how" data-i18n="wF2H">HOW: tick "Demo mode" before starting. Great first click.</p></div>
+      <div class="feature-card"><h4>📋 <span data-i18n="wF3T">Templates</span></h4><p class="what" data-i18n="wF3W">Ready-made requirement lists (expense API, World Cup predictor…).</p><p class="how" data-i18n="wF3H">HOW: "Template" dropdown → pick one → it fills the box for you.</p></div>
+      <div class="feature-card"><h4>🧠 <span data-i18n="wF4T">Per-role models</span></h4><p class="what" data-i18n="wF4W">Planner, builder and inspector can each use a different Qwen model.</p><p class="how" data-i18n="wF4H">HOW: three dropdowns under the checklist. Defaults are already set to free-quota models — just leave them.</p></div>
+      <div class="feature-card"><h4>📂 <span data-i18n="wF5T">Edit a REAL project</span></h4><p class="what" data-i18n="wF5W">Points Foreman at your actual code repo — safely: it works on its own branch, never touches yours, never pushes.</p><p class="how" data-i18n="wF5H">HOW: fill "Existing project folder" + tick the confirmation. Review with git diff afterwards; merging is always your call.</p></div>
+      <div class="feature-card"><h4>🧱 <span data-i18n="wF6T">Status wall + live feed</span></h4><p class="what" data-i18n="wF6W">One cell per task; the event feed shows every claim, verdict and retry as it happens.</p><p class="how" data-i18n="wF6H">HOW: click any run in the "Runs" list. Green=done, amber=working, red=stuck.</p></div>
+      <div class="feature-card"><h4>✅ <span data-i18n="wF7T">Real test gates</span></h4><p class="what" data-i18n="wF7W">A task counts as done ONLY after its tests actually pass. "Trust me, it's done" doesn't fly here.</p><p class="how" data-i18n="wF7H">HOW: automatic. Seeing REJECT in the feed is the system working — the fix comes in the next attempt.</p></div>
+      <div class="feature-card"><h4>⚖️ <span data-i18n="wF8T">Appeals court</span></h4><p class="what" data-i18n="wF8W">If the builder thinks a rejection was unfair, it can appeal once — a stronger model reads the evidence and rules.</p><p class="how" data-i18n="wF8H">HOW: automatic. Watch for amber DISPUTE / ARBITRATION badges in the event feed.</p></div>
+      <div class="feature-card"><h4>⏸️ <span data-i18n="wF9T">Stop & Resume</span></h4><p class="what" data-i18n="wF9W">Stop gracefully at the next task boundary. Crashes, closed laptops, dead quota — nothing loses progress.</p><p class="how" data-i18n="wF9H">HOW: Stop / Resume buttons on the run header. Finished tasks are never redone.</p></div>
+      <div class="feature-card"><h4>💰 <span data-i18n="wF10T">Live cost meter</span></h4><p class="what" data-i18n="wF10W">Each run shows tokens spent and an estimated dollar cost, live.</p><p class="how" data-i18n="wF10H">HOW: automatic, on the run header (≈$0.0123 · 45,678 tok). Estimate only — not a bill.</p></div>
+      <div class="feature-card"><h4>📦 <span data-i18n="wF11T">Download & archive</span></h4><p class="what" data-i18n="wF11W">Grab the finished code as a zip; archive old runs to keep the list tidy.</p><p class="how" data-i18n="wF11H">HOW: buttons on each run row / run header after it finishes.</p></div>
+      <div class="feature-card"><h4>🌐 <span data-i18n="wF12T">Web search + Hermes</span></h4><p class="what" data-i18n="wF12W">The builder can search the live internet (no key needed). Power users can even swap in the hermes-agent as the builder.</p><p class="how" data-i18n="wF12H">HOW: web search is automatic when a task needs facts. Hermes: see docs/HERMES.md (one env var).</p></div>
+    </div>
+
+    <div class="welcome-foot" data-i18n="wFoot">Honest limits: real runs need a DashScope API key in the .env file (Demo mode doesn't). Tests are pytest-style today. If a task fails 3 times it stops and waits for you instead of looping forever — that's a feature.</div>
+  </div>
+</div>
+
+<button type="button" class="help-fab" id="help-fab" title="Help">?</button>
+
 <script>
 (function () {
   "use strict";
@@ -924,6 +1046,28 @@
       outcome_rejected_by_verifier: "rejected by verifier",
       outcome_crashed: "crashed",
       outcome_timeout: "timeout",
+
+      wTitle: "Foreman — your AI foreman",
+      wTagline: "Give it a long requirements list. It plans the work, hires an AI to build each piece, REFUSES to accept anything that fails a real test, and keeps going until everything is green — even across crashes.",
+      wStep1T: "Paste your list", wStep1B: "Type requirements one per line in \"New Run\" — or pick a ready-made template.",
+      wStep2T: "Press Start", wStep2B: "Watch the status wall: each cell is one task going grey → amber → green.",
+      wStep3T: "Collect the goods", wStep3B: "When all cells are green, download the finished code as a zip. Every item was proven by a real test.",
+      wDemoBtn: "▶ Try a free demo first (no key, no cost)",
+      wEnterBtn: "Start using Foreman",
+      wFeaturesTitle: "Everything it can do — and how to use each one",
+      wF1T: "New Run", wF1W: "Turns a requirements list into a fully built, fully tested project.", wF1H: "HOW: left panel → paste your list (one item per line) → Start Foreman.",
+      wF2T: "Demo mode", wF2W: "The whole product with fake workers — zero API key, zero cost, offline.", wF2H: "HOW: tick \"Demo mode\" before starting. Great first click.",
+      wF3T: "Templates", wF3W: "Ready-made requirement lists (expense API, World Cup predictor…).", wF3H: "HOW: \"Template\" dropdown → pick one → it fills the box for you.",
+      wF4T: "Per-role models", wF4W: "Planner, builder and inspector can each use a different Qwen model.", wF4H: "HOW: three dropdowns under the checklist. Defaults are already set to free-quota models — just leave them.",
+      wF5T: "Edit a REAL project", wF5W: "Points Foreman at your actual code repo — safely: it works on its own branch, never touches yours, never pushes.", wF5H: "HOW: fill \"Existing project folder\" + tick the confirmation. Review with git diff afterwards; merging is always your call.",
+      wF6T: "Status wall + live feed", wF6W: "One cell per task; the event feed shows every claim, verdict and retry as it happens.", wF6H: "HOW: click any run in the \"Runs\" list. Green=done, amber=working, red=stuck.",
+      wF7T: "Real test gates", wF7W: "A task counts as done ONLY after its tests actually pass. \"Trust me, it's done\" doesn't fly here.", wF7H: "HOW: automatic. Seeing REJECT in the feed is the system working — the fix comes in the next attempt.",
+      wF8T: "Appeals court", wF8W: "If the builder thinks a rejection was unfair, it can appeal once — a stronger model reads the evidence and rules.", wF8H: "HOW: automatic. Watch for amber DISPUTE / ARBITRATION badges in the event feed.",
+      wF9T: "Stop & Resume", wF9W: "Stop gracefully at the next task boundary. Crashes, closed laptops, dead quota — nothing loses progress.", wF9H: "HOW: Stop / Resume buttons on the run header. Finished tasks are never redone.",
+      wF10T: "Live cost meter", wF10W: "Each run shows tokens spent and an estimated dollar cost, live.", wF10H: "HOW: automatic, on the run header (≈$0.0123 · 45,678 tok). Estimate only — not a bill.",
+      wF11T: "Download & archive", wF11W: "Grab the finished code as a zip; archive old runs to keep the list tidy.", wF11H: "HOW: buttons on each run row / run header after it finishes.",
+      wF12T: "Web search + Hermes", wF12W: "The builder can search the live internet (no key needed). Power users can even swap in the hermes-agent as the builder.", wF12H: "HOW: web search is automatic when a task needs facts. Hermes: see docs/HERMES.md (one env var).",
+      wFoot: "Honest limits: real runs need a DashScope API key in the .env file (Demo mode doesn't). Tests are pytest-style today. If a task fails 3 times it stops and waits for you instead of looping forever — that's a feature.",
     },
     zh: {
       newRun: "新建运行",
@@ -1014,6 +1158,28 @@
       outcome_rejected_by_verifier: "被验收器驳回",
       outcome_crashed: "崩溃",
       outcome_timeout: "超时",
+
+      wTitle: "Foreman 工头 — 给 AI 派活、验收、盯进度",
+      wTagline: "把一长串需求清单交给它:它负责拆解任务、雇 AI 逐条施工、用真实测试验收(不过测试就打回重做),一直干到全部变绿——中途断电断网也不丢进度。",
+      wStep1T: "贴上你的清单", wStep1B: "在「新建运行」里一行写一条需求,或直接从模板下拉框选一份现成的。",
+      wStep2T: "点开始", wStep2B: "盯着状态墙看:每个格子是一个任务,灰色→黄色→绿色。",
+      wStep3T: "收货", wStep3B: "全绿后一键下载做好的代码。每一条都被真实测试验证过,不是 AI 嘴上说做完了。",
+      wDemoBtn: "▶ 先看免费演示(不要 Key、不花钱)",
+      wEnterBtn: "开始使用 Foreman",
+      wFeaturesTitle: "全部功能一览 — 每个都写了用法",
+      wF1T: "新建运行", wF1W: "把一份需求清单变成一个完整做好、全部测试通过的项目。", wF1H: "用法:左侧面板 → 贴入需求(一行一条)→ 点「启动 Foreman」。",
+      wF2T: "演示模式", wF2W: "用假工人跑完整流程——零 API Key、零花费、不联网,先感受产品长什么样。", wF2H: "用法:开始前勾选「演示模式」。第一次玩强烈建议先点这个。",
+      wF3T: "需求模板", wF3W: "现成的需求清单(报销 API、世界杯胜率预测器等),不用自己想需求。", wF3H: "用法:「模板」下拉框选一个,需求框自动填好。",
+      wF4T: "分角色选模型", wF4W: "规划、施工、验收三个角色可以各用不同的 Qwen 模型。", wF4H: "用法:需求框下面三个下拉框。默认已配好免费额度的模型,不懂就别动。",
+      wF5T: "改你的真实项目", wF5W: "让 Foreman 直接修改你电脑上的真实代码仓库——安全:它只在自己的分支上干活,永不碰你的主分支,永不推送。", wF5H: "用法:填「现有项目文件夹」+ 勾确认框。干完你用 git diff 检查,合不合并永远你说了算。",
+      wF6T: "状态墙 + 实时动态", wF6W: "一格一个任务;事件流实时滚动显示每次领活、验收、打回。", wF6H: "用法:点「运行列表」里的任意一条。绿=完成,黄=进行中,红=卡住。",
+      wF7T: "真实测试验收", wF7W: "任务只有真跑过测试且通过才算完成。「相信我,做完了」在这里不好使。", wF7H: "用法:全自动。看到 REJECT(打回)别慌,那是系统在干活——下一次尝试就是修复。",
+      wF8T: "申诉仲裁庭", wF8W: "施工 AI 觉得被冤枉了可以上诉一次,由更强的模型读证据后改判或维持。", wF8H: "用法:全自动。注意事件流里的黄色 DISPUTE / ARBITRATION 徽章。",
+      wF9T: "停止与续跑", wF9W: "优雅停止(干完手头任务再停)。断电、合盖、额度用光——进度一点不丢。", wF9H: "用法:运行标题栏的 Stop / Resume 按钮。做完的任务永远不会重做。",
+      wF10T: "实时费用表", wF10W: "每次运行实时显示花了多少 token、约合多少美元。", wF10H: "用法:全自动,显示在运行标题栏(≈$0.0123 · 45,678 tok)。仅供参考,不是账单。",
+      wF11T: "下载与归档", wF11W: "做好的代码一键打包 zip 下载;跑完的任务可归档,列表保持清爽。", wF11H: "用法:运行结束后,每条运行右侧 / 标题栏上的按钮。",
+      wF12T: "联网搜索 + Hermes", wF12W: "施工 AI 能实时上网查资料(不要任何 Key)。高级玩家还能换 hermes-agent 当施工员。", wF12H: "用法:联网搜索全自动。Hermes 玩法见 docs/HERMES.md(改一个环境变量)。",
+      wFoot: "诚实说明:真实运行需要在 .env 文件里配 DashScope API Key(演示模式不用)。目前验收只认 pytest 风格测试。任务连续失败 3 次会停下来等你处理,而不是无限烧钱重试——这是特性,不是 bug。",
     },
   };
 
@@ -1823,6 +1989,48 @@
   var langBtnZh = document.getElementById("lang-btn-zh");
   if (langBtnEn) langBtnEn.addEventListener("click", function () { setLang("en"); });
   if (langBtnZh) langBtnZh.addEventListener("click", function () { setLang("zh"); });
+
+  // ---------------- welcome / onboarding overlay ----------------
+  // First visit: shown automatically (localStorage flag). The ? button in
+  // the corner reopens it any time — it doubles as the product manual.
+
+  var welcomeOverlay = document.getElementById("welcome-overlay");
+  var helpFab = document.getElementById("help-fab");
+
+  function showWelcome() { welcomeOverlay.hidden = false; }
+  function hideWelcome() {
+    welcomeOverlay.hidden = true;
+    try { window.localStorage.setItem("foreman_welcomed", "1"); } catch (err) { /* ok */ }
+  }
+
+  helpFab.addEventListener("click", showWelcome);
+  document.getElementById("welcome-enter-btn").addEventListener("click", hideWelcome);
+  welcomeOverlay.addEventListener("click", function (ev) {
+    if (ev.target === welcomeOverlay) hideWelcome();  // click outside the panel closes
+  });
+
+  document.getElementById("welcome-demo-btn").addEventListener("click", function () {
+    // One-click novice path: pre-arm a zero-key demo run so the only thing
+    // left to press is the big Start button (deliberately NOT auto-started —
+    // the user should own the moment the machine starts working for them).
+    el.demoModeCb.checked = true;
+    el.demoModeCb.dispatchEvent(new Event("change"));
+    var opts = el.templateSelect.options;
+    if (el.templateSelect.value === "" && opts.length > 1) {
+      el.templateSelect.selectedIndex = 1;
+      el.templateSelect.dispatchEvent(new Event("change"));
+    }
+    hideWelcome();
+    var startBtn = document.getElementById("start-btn");
+    startBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+    startBtn.style.transition = "box-shadow .3s";
+    startBtn.style.boxShadow = "0 0 0 4px var(--orange-light)";
+    setTimeout(function () { startBtn.style.boxShadow = ""; }, 2600);
+  });
+
+  var welcomedBefore = false;
+  try { welcomedBefore = window.localStorage.getItem("foreman_welcomed") === "1"; } catch (err) { /* ok */ }
+  if (!welcomedBefore) showWelcome();
 
   // ---------------- boot ----------------
 
