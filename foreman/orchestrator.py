@@ -99,9 +99,20 @@ class Orchestrator:
         run_root: str = "runs",
         project_dir: str | Path | None = None,
         force_dirty: bool = False,
+        computer_mode: bool = False,
+        work_dir: str | Path | None = None,
     ):
         self.settings = settings
         self.client = make_client(settings)
+        # Computer mode (电脑操控模式): the user explicitly grants Foreman full
+        # reign over their own machine — the Workspace is pointed at a real
+        # folder they choose (default: home), the command deny-list is OFF
+        # (allow_all), and there is NO git requirement or branch isolation.
+        # This is the "operate my computer, edit any file, run any command"
+        # capability, opt-in and off by default. It is deliberately separate
+        # from existing-project mode (which keeps every git guardrail) —
+        # nobody should get an unguarded shell on their real repo by accident.
+        self.computer_mode = bool(computer_mode)
 
         self.run_root = Path(run_root)
         self.run_root.mkdir(parents=True, exist_ok=True)
@@ -215,6 +226,21 @@ class Orchestrator:
             )
 
             repo_snapshot = repo_context.build_repo_snapshot(self.project_dir)
+        elif self.computer_mode:
+            # Full-machine mode: root the Workspace at a real folder the user
+            # named (default their home directory) with the command policy
+            # OFF. run_command can now do anything the user's own account can
+            # — set the wallpaper, edit any file under work_dir, invoke system
+            # tools. No git, no jail beyond the chosen root.
+            root = Path(work_dir).expanduser().resolve() if work_dir else Path.home()
+            root.mkdir(parents=True, exist_ok=True)
+            self.work_dir = root
+            self.workspace = Workspace(root, allow_all=True)
+            (run_dir / "computer_mode.json").write_text(
+                json.dumps({"work_dir": str(root)}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            self._emit("computer_mode", detail={"work_dir": str(root)})
         else:
             self.workspace = Workspace(run_dir / "workspace")
 
@@ -230,7 +256,13 @@ class Orchestrator:
                 self.client, settings.executor_model, self.workspace, existing_project=True
             )
         else:
-            self.executor = make_executor(settings, self.workspace, self.client)
+            # Computer mode still honors FOREMAN_EXECUTOR_BACKEND (so a power
+            # user can drive it with the full hermes-agent), but passes
+            # computer_mode through so the native executor's system prompt tells
+            # it it's operating a real machine, not a sandbox.
+            self.executor = make_executor(
+                settings, self.workspace, self.client, computer_mode=self.computer_mode
+            )
         self.verifier = Verifier(self.client, settings.verifier_model, self.workspace)
         # Arbiter uses the planner-tier model (qwen-max) on purpose: it is
         # meant to out-rank both the executor that disputes and the verifier
@@ -249,9 +281,13 @@ class Orchestrator:
         # vanishing into stdout.
         self.executor.fallback_models = list(settings.fallback_models)
         llm.on_model_fallback = self._on_model_fallback
+        llm.on_rate_limit_wait = self._on_rate_limit_wait
 
     def _on_model_fallback(self, original: str, used: str) -> None:
         self._emit("model_fallback", detail={"from": original, "to": used})
+
+    def _on_rate_limit_wait(self, model: str, delay_s: float) -> None:
+        self._emit("rate_limit_wait", detail={"model": model, "delay_s": round(delay_s, 1)})
 
     # ---- events ---------------------------------------------------------
 

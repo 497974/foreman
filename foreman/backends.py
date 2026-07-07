@@ -328,17 +328,24 @@ class HermesBackend:
         return handoff
 
 
-def make_executor(settings, workspace: Workspace, client) -> ExecutorBackend:
+def make_executor(settings, workspace: Workspace, client, computer_mode: bool = False) -> ExecutorBackend:
     """Build the executor named by ``settings.executor_backend`` (default native).
 
     'native'   -> the hand-written tool-loop Executor (pure Python, default).
     'qwen-code'-> delegate to the qwen-code CLI (opt-in; needs Node.js + the CLI).
     'hermes'   -> delegate to NousResearch's hermes-agent CLI (opt-in; see
                   scripts/setup_hermes.py for the one-time DashScope wiring).
+
+    ``computer_mode`` is passed through to the native Executor so its system
+    prompt tells it it's operating a real machine (see Executor). The external
+    agent backends (qwen-code / hermes) are already full computer agents, so
+    they need no such hint.
     """
     name = (getattr(settings, "executor_backend", "native") or "native").strip().lower()
     if name in ("qwen-code", "qwen_code", "qwencode"):
         return QwenCodeBackend(settings, workspace)
     if name in ("hermes", "hermes-agent", "hermes_agent"):
         return HermesBackend(settings, workspace)
-    return Executor(client, settings.executor_model, workspace)
+    return Executor(
+        client, settings.executor_model, workspace, computer_mode=computer_mode
+    )

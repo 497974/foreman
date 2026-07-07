@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from .telemetry import METER
 
@@ -40,6 +40,14 @@ def on_model_fallback(original: str, used: str) -> None:
     events.jsonl. Kept as a plain module attribute (not a class) so tests can
     monkeypatch ``foreman.llm.on_model_fallback`` directly.
     """
+
+
+def on_rate_limit_wait(model: str, delay_s: float) -> None:
+    """Default no-op hook, fired before sleeping out a per-minute rate limit.
+
+    The orchestrator overrides this to emit a "rate_limit_wait" event so the
+    console can show "waiting 45s for the free-tier rate window" instead of
+    looking frozen. Same module-attribute pattern as on_model_fallback."""
 
 
 def _is_quota_or_forbidden_error(exc: BaseException) -> bool:
@@ -74,6 +82,34 @@ def _is_persistent_429(exc: BaseException) -> bool:
     return status == 429 or "429" in text or "rate limit" in text or "rate_limit" in text
 
 
+def _rate_limit_retry_delay(exc: BaseException) -> Optional[float]:
+    """Seconds to wait before retrying the SAME model after a 429, or None.
+
+    Free tiers rate-limit by requests-per-MINUTE (e.g. Google AI Studio's
+    gemini free tier is 5 RPM) and say so explicitly: the 429 body carries a
+    ``retryDelay``/"retry in 45s" hint. That is NOT quota exhaustion — the
+    right response is to wait the stated delay and try again, not to give up
+    or burn a fallback model (on a single-model free tier there IS no other
+    model). We only honor SHORT delays (<= 60s): a longer one means the
+    per-DAY quota is gone, where sleeping inside one run would just hang it.
+    """
+    status = getattr(exc, "status_code", None) or getattr(exc, "http_status", None)
+    text = str(exc)
+    is_429 = status == 429 or "429" in text or "RESOURCE_EXHAUSTED" in text
+    if not is_429:
+        return None
+    # "retry in 45.6s", "retryDelay': '45s'", "retryDelay: 45"
+    m = re.search(r"retry\w*[^0-9]{0,12}(\d+(?:\.\d+)?)\s*s", text, re.IGNORECASE)
+    if m:
+        secs = float(m.group(1))
+        return secs + 1.0 if secs <= 60 else None
+    # A 429 with NO explicit delay hint is left to the existing behavior
+    # (treated as persistent → fall through to model chaining). We only spend
+    # a run's wall-clock sleeping when the provider explicitly told us how long
+    # to wait — otherwise a multi-model fallback chain is the faster recovery.
+    return None
+
+
 def _is_transient_connection_error(exc: BaseException) -> bool:
     """A network-level failure worth retrying against the SAME model.
 
@@ -93,6 +129,11 @@ def _is_transient_connection_error(exc: BaseException) -> bool:
 # not to wait out an outage (a run stuck sleeping looks like a hang).
 _TRANSIENT_RETRIES = 3
 _TRANSIENT_BACKOFF_S = (1.0, 2.0, 4.0)
+
+# Same-model retries for per-minute rate limits (free-tier 429 with a short
+# retryDelay). Enough to ride out a couple of RPM windows without hanging
+# forever: 6 waits of <=60s each caps the total stall at a few minutes.
+_RATE_LIMIT_RETRIES = 6
 
 
 def create_with_fallback(
@@ -122,6 +163,7 @@ def create_with_fallback(
     tried = {model}
     current = model
     transient_used = 0
+    rate_limit_used = 0
 
     while True:
         try:
@@ -132,6 +174,17 @@ def create_with_fallback(
                     raise
                 time.sleep(_TRANSIENT_BACKOFF_S[min(transient_used, len(_TRANSIENT_BACKOFF_S) - 1)])
                 transient_used += 1
+                continue
+            # A per-minute rate limit with a short retry hint: wait it out on
+            # the SAME model before considering it fatal. This is what makes a
+            # free-tier key (e.g. Gemini 5 RPM) actually complete a run instead
+            # of dying on the first burst. Only after exhausting these does a
+            # 429 count as "persistent" and fall through to model chaining.
+            rl_delay = _rate_limit_retry_delay(exc)
+            if rl_delay is not None and rate_limit_used < _RATE_LIMIT_RETRIES:
+                on_rate_limit_wait(current, rl_delay)
+                time.sleep(rl_delay)
+                rate_limit_used += 1
                 continue
             if not (_is_quota_or_forbidden_error(exc) or _is_persistent_429(exc)):
                 raise

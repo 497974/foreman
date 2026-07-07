@@ -136,7 +136,7 @@ def patch_orchestrator_seams(monkeypatch):
     monkeypatch.setattr(
         orchestrator_module,
         "make_executor",
-        lambda settings, workspace, client: FakeExecutor(client, settings.executor_model, workspace),
+        lambda settings, workspace, client, computer_mode=False: FakeExecutor(client, settings.executor_model, workspace),
     )
     monkeypatch.setattr(orchestrator_module, "Verifier", FakeVerifier)
     monkeypatch.setattr(orchestrator_module, "Arbiter", FakeArbiter)

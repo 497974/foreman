@@ -1,10 +1,22 @@
-"""Configuration + Qwen (DashScope) client factory.
+"""Configuration + LLM client factory.
 
 Loads a local .env (no third-party dotenv dependency) and exposes an
-OpenAI-compatible client pointed at the workspace's DashScope endpoint, plus the
-model chosen for each role. Model names are overridable via env because the
-DashScope catalog drifts — never hard-code a model string you haven't confirmed
-against the live console.
+OpenAI-compatible client plus the model chosen for each role.
+
+Two providers are supported through the SAME OpenAI-compatible surface:
+
+* ``qwen`` (default) — Alibaba DashScope. This is the hackathon target and
+  the documented default; the FC deployment and the committed evaluation
+  evidence all run on Qwen.
+* ``gemini`` — Google AI Studio via its OpenAI-compatible endpoint
+  (generativelanguage.googleapis.com/.../openai). This exists as a real
+  fallback for when the DashScope free per-model quota is exhausted: set
+  ``FOREMAN_PROVIDER=gemini`` and a ``GEMINI_API_KEY`` and every role runs on
+  free Gemini instead, no code change. Nothing else in Foreman knows or cares
+  which one is active — it is one base_url + key + model triple either way.
+
+Model names are overridable per role via ``FOREMAN_*_MODEL`` because both
+catalogs drift — never hard-code a model string you haven't confirmed live.
 """
 
 from __future__ import annotations
@@ -35,6 +47,34 @@ def _default_fallback_models() -> list[str]:
     return ["qwen-turbo", "qwen-flash", "qwen3-coder-flash"]
 
 
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+# Per-provider defaults. Roles can still be overridden individually with
+# FOREMAN_PLANNER_MODEL / FOREMAN_EXECUTOR_MODEL / FOREMAN_VERIFIER_MODEL.
+_PROVIDER_DEFAULTS = {
+    "qwen": {
+        "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        "planner": "qwen-max",
+        "executor": "qwen3-coder-plus",
+        "verifier": "qwen-plus",
+        "fallback": _default_fallback_models(),
+        "key_names": ("DASHSCOPE_API_KEY",),
+        "base_env": "DASHSCOPE_BASE_URL",
+    },
+    "gemini": {
+        # gemini-2.5-flash is the workhorse with the most generous free tier;
+        # 2.5-pro / 2.0-flash have tighter free limits (verified live).
+        "base_url": GEMINI_BASE_URL,
+        "planner": "gemini-2.5-flash",
+        "executor": "gemini-2.5-flash",
+        "verifier": "gemini-2.5-flash",
+        "fallback": ["gemini-2.5-flash"],
+        "key_names": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "base_env": "GEMINI_BASE_URL",
+    },
+}
+
+
 @dataclass(frozen=True)
 class Settings:
     api_key: str
@@ -50,33 +90,49 @@ class Settings:
     # in practice and the whole run died — this is what makes it a non-issue.
     fallback_models: list[str] = field(default_factory=_default_fallback_models)
 
+    # Which LLM provider is active ("qwen" or "gemini"); surfaced so callers
+    # (the console's config panel, telemetry) can report it.
+    provider: str = "qwen"
+
     @classmethod
     def from_env(cls, env_path: str | os.PathLike = ".env") -> "Settings":
         load_env(env_path)
-        api_key = os.environ.get("DASHSCOPE_API_KEY", "")
+        provider = os.environ.get("FOREMAN_PROVIDER", "qwen").strip().lower()
+        if provider not in _PROVIDER_DEFAULTS:
+            provider = "qwen"
+        pd = _PROVIDER_DEFAULTS[provider]
+
+        api_key = ""
+        for name in pd["key_names"]:
+            api_key = os.environ.get(name, "")
+            if api_key:
+                break
         if not api_key:
+            names = " or ".join(pd["key_names"])
             raise RuntimeError(
-                "DASHSCOPE_API_KEY not found. Put it in .env or the environment."
+                f"{names} not found (provider={provider}). Put it in .env or the "
+                "environment. To use Google's free Gemini tier instead of Qwen, "
+                "set FOREMAN_PROVIDER=gemini and GEMINI_API_KEY."
             )
-        base_url = os.environ.get(
-            "DASHSCOPE_BASE_URL",
-            "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        )
+
+        base_url = os.environ.get(pd["base_env"], pd["base_url"])
+
         fallback_raw = os.environ.get("FOREMAN_FALLBACK_MODELS", "")
         fallback_models = (
             [m.strip() for m in fallback_raw.split(",") if m.strip()]
             if fallback_raw.strip()
-            else _default_fallback_models()
+            else list(pd["fallback"])
         )
         return cls(
             api_key=api_key,
             base_url=base_url,
-            # Roles per the plan; override with FOREMAN_*_MODEL if the catalog differs.
-            planner_model=os.environ.get("FOREMAN_PLANNER_MODEL", "qwen-max"),
-            executor_model=os.environ.get("FOREMAN_EXECUTOR_MODEL", "qwen3-coder-plus"),
-            verifier_model=os.environ.get("FOREMAN_VERIFIER_MODEL", "qwen-plus"),
+            # Roles default per provider; override with FOREMAN_*_MODEL.
+            planner_model=os.environ.get("FOREMAN_PLANNER_MODEL", pd["planner"]),
+            executor_model=os.environ.get("FOREMAN_EXECUTOR_MODEL", pd["executor"]),
+            verifier_model=os.environ.get("FOREMAN_VERIFIER_MODEL", pd["verifier"]),
             executor_backend=os.environ.get("FOREMAN_EXECUTOR_BACKEND", "native"),
             fallback_models=fallback_models,
+            provider=provider,
         )
 
 

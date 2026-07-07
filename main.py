@@ -101,7 +101,24 @@ def main() -> int:
         help="existing-project mode: proceed even if the repo has uncommitted "
         "changes (not recommended; only valid with --checklist).",
     )
+    parser.add_argument(
+        "--computer-mode", action="store_true",
+        help="computer mode: operate the user's real machine — Workspace rooted "
+        "at --work-dir (default: home) with the command deny-list OFF and no git. "
+        "Lets tasks edit any file there and run any system command. Only with "
+        "--checklist; not combinable with --project-dir.",
+    )
+    parser.add_argument(
+        "--work-dir", metavar="PATH", default=None,
+        help="computer mode: the folder to root the Workspace at (default: your "
+        "home directory).",
+    )
     args = parser.parse_args()
+
+    if args.computer_mode and args.project_dir:
+        raise SystemExit("--computer-mode and --project-dir are mutually exclusive.")
+    if args.resume and args.computer_mode:
+        raise SystemExit("--computer-mode is not valid with --resume (it self-derives from the run).")
 
     if args.resume and (args.project_dir or args.force_dirty):
         raise SystemExit(
@@ -150,6 +167,8 @@ def main() -> int:
                 run_root=args.run_root,
                 project_dir=args.project_dir,
                 force_dirty=args.force_dirty,
+                computer_mode=args.computer_mode,
+                work_dir=args.work_dir,
             )
         except GitSafetyError as e:
             # Clean one-line error, no traceback — the whole point of

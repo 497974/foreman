@@ -294,3 +294,56 @@ def test_transient_connection_error_gives_up_after_retry_budget(monkeypatch):
         create_with_fallback(client, "qwen-max", [])
     # 1 initial + _TRANSIENT_RETRIES retries, then propagate
     assert len(client.chat.completions.calls) == 1 + llm._TRANSIENT_RETRIES
+
+
+# ---- per-minute rate-limit backoff (free-tier 429 with retryDelay) ---------
+
+
+def test_rate_limit_429_retries_same_model_after_backoff(monkeypatch):
+    """A 429 with a short 'retry in Ns' hint (free-tier RPM limit) must wait
+    and retry the SAME model, not fall through / die. Caught live: Gemini's
+    free tier is 5 RPM and killed a run on the first burst."""
+    slept = []
+    monkeypatch.setattr(llm.time, "sleep", lambda s: slept.append(s))
+    waited = []
+    monkeypatch.setattr(llm, "on_rate_limit_wait", lambda m, d: waited.append((m, d)))
+
+    client = FakeClient({
+        "gemini-2.5-flash": [
+            QuotaError("429 RESOURCE_EXHAUSTED ... Please retry in 30s.", status_code=429),
+            _ok_response("recovered"),
+        ],
+    })
+    out = create_with_fallback(client, "gemini-2.5-flash", fallback_models=[])
+    assert out.choices[0].message.content == "recovered"
+    assert slept and 30.0 <= slept[0] <= 32.0        # honored the stated delay
+    assert waited and waited[0][0] == "gemini-2.5-flash"
+
+
+def test_rate_limit_gives_up_after_max_retries(monkeypatch):
+    """Persistent 429s eventually stop retrying (bounded stall, no infinite
+    hang) and the error propagates once the chain is also exhausted."""
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    monkeypatch.setattr(llm, "on_rate_limit_wait", lambda m, d: None)
+
+    always = [QuotaError("429 retry in 5s", status_code=429) for _ in range(20)]
+    client = FakeClient({"gemini-2.5-flash": always})
+    try:
+        create_with_fallback(client, "gemini-2.5-flash", fallback_models=[])
+        assert False, "should have raised after exhausting rate-limit retries"
+    except QuotaError:
+        pass
+
+
+def test_rate_limit_delay_parser():
+    from foreman.llm import _rate_limit_retry_delay
+    e1 = QuotaError("Please retry in 45.6s.", status_code=429)
+    assert 46.0 <= _rate_limit_retry_delay(e1) <= 47.0
+    e2 = QuotaError("429 rate limited, retryDelay: 12s", status_code=429)
+    assert 12.5 <= _rate_limit_retry_delay(e2) <= 13.5
+    # a 429 with NO explicit delay hint → None (keeps old behavior: chain to next model)
+    assert _rate_limit_retry_delay(QuotaError("429 too many requests", status_code=429)) is None
+    # not a 429 → None
+    assert _rate_limit_retry_delay(QuotaError("400 bad request", status_code=400)) is None
+    # a huge delay (per-DAY quota) → None (don't hang a run on it)
+    assert _rate_limit_retry_delay(QuotaError("retry in 3600s", status_code=429)) is None

@@ -292,6 +292,7 @@ class Executor:
         command_timeout: float = 120.0,
         fallback_models: list[str] | None = None,
         existing_project: bool = False,
+        computer_mode: bool = False,
     ):
         self.client = client
         self.model = model
@@ -309,6 +310,11 @@ class Executor:
         # authoritative) stay identical. Default False = zero behavior change
         # for greenfield mode / existing tests.
         self.existing_project = existing_project
+        # Computer mode: the Workspace is the user's real machine (allow_all,
+        # no jail beyond work_dir). Tell the executor so it stops assuming a
+        # code-project sandbox and will use system commands (set wallpaper,
+        # move files, etc.) — a task here may have no test at all.
+        self.computer_mode = computer_mode
         self.system_prompt = SYSTEM_PROMPT
         if existing_project:
             self.system_prompt = (
@@ -317,6 +323,19 @@ class Executor:
                 "relevant files before editing them, and follow existing "
                 "conventions rather than rewriting things from scratch unless "
                 "the task says to."
+            )
+        if computer_mode:
+            self.system_prompt = (
+                SYSTEM_PROMPT
+                + "\n\nYou are operating the user's REAL computer, not a code "
+                "sandbox. The working directory is a real folder on their "
+                "machine and run_command can invoke real system tools "
+                "(PowerShell, file operations, OS settings). Carry out the "
+                "requested change directly with the appropriate command for "
+                "this OS. Many tasks here are not software projects and have no "
+                "automated test — if there is no test_strategy, verify by "
+                "observing the command's own success (exit code, output) and "
+                "call done with what you actually ran."
             )
 
     def execute(self, task: Task, dependency_handoffs: list[Handoff]) -> Handoff:

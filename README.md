@@ -362,12 +362,36 @@ Known boundaries of a focused v1 — each paired with the direction we'd take it
 
 ## Qwen Cloud / Alibaba Cloud integration
 
-Foreman talks to Qwen exclusively through the **DashScope international
-endpoint in OpenAI-compatible mode** — no vendor SDK beyond `openai`. Model
-routing is per-role (planner/arbiter on `qwen-max`, executor on
+Foreman talks to Qwen through the **DashScope international endpoint in
+OpenAI-compatible mode** — no vendor SDK beyond `openai`. Model routing is
+per-role (planner/arbiter on `qwen-max`, executor on
 `qwen3-coder-plus`/`qwen-plus`, verifier on `qwen-plus` in JSON mode) and
 overridable via environment variables so the DashScope catalog can drift
 without a code change.
+
+### Provider switch: free Gemini fallback
+
+Because the same OpenAI-compatible surface serves both, a single env var
+repoints every role at Google AI Studio's free tier when DashScope quota is
+gone: `FOREMAN_PROVIDER=gemini` + `GEMINI_API_KEY`. The code default stays
+Qwen (the hackathon target and the committed evaluation evidence); Gemini is
+the "keep working when the free quota runs dry" escape hatch. Free tiers
+rate-limit hard (Gemini is ~5 requests/minute), so `create_with_fallback`
+now parses a 429's `retryDelay` and waits out the per-minute window on the
+same model — a run slows down but does not die (surfaced as `rate_limit_wait`
+events). See [`foreman/config.py`](foreman/config.py).
+
+### Hermes integration — Foreman as a multitasking engine
+
+Foreman also composes with [hermes-agent](https://github.com/NousResearch/hermes-agent)
+in both directions (see [docs/HERMES.md](docs/HERMES.md)): Hermes can drive
+Foreman as its **execution backend** (`FOREMAN_EXECUTOR_BACKEND=hermes` runs
+each task through a headless `hermes -z`), and Foreman ships as a **Hermes
+skill** so a Hermes user handing over a long checklist gets it planned,
+verified, and resumed by Foreman while Hermes remains the agent that actually
+executes each task. `--computer-mode` points Foreman's workspace at the real
+machine (any folder, command policy off, no git) for "operate my computer"
+tasks that have no test to gate on.
 
 Integration files: [`foreman/config.py`](foreman/config.py) (`.env` loading,
 `Settings`, the DashScope client factory) and [`foreman/llm.py`](foreman/llm.py)
