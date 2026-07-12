@@ -281,6 +281,18 @@
   }
   .status-line.error { color: var(--c-blocked); font-weight: 600; }
 
+  .checklist-help {
+    display: flex; align-items: flex-start; gap: 8px;
+    margin: -2px 0 2px; font-size: 11.5px; line-height: 1.45;
+  }
+  .checklist-help .ch-tip { color: var(--ink-soft); flex: 1; }
+  .checklist-help .ch-example-btn {
+    flex-shrink: 0; background: transparent; border: 1px solid var(--steel-light);
+    color: var(--steel); border-radius: 6px; padding: 3px 9px; font-size: 11.5px;
+    cursor: pointer; white-space: nowrap; font-weight: 600;
+  }
+  .checklist-help .ch-example-btn:hover { background: var(--steel-soft, var(--c-grey-bg)); }
+
   hr.sep { border: none; border-top: 1px solid var(--line); margin: 6px 0; }
 
   /* ---------- runs list ---------- */
@@ -422,6 +434,27 @@
   .run-header .rh-btn.stop { color: var(--c-blocked); border-color: var(--c-blocked); }
   .run-header .rh-btn.resume { color: var(--c-done); border-color: var(--c-done); }
   .run-header .rh-btn.archive:hover { background: var(--c-blocked-bg); }
+
+  /* ---------- "it finished, now what?" done panel ---------- */
+  .done-panel {
+    background: var(--c-done-bg);
+    border-bottom: 2px solid var(--c-done);
+    padding: 12px 20px;
+    flex-shrink: 0;
+  }
+  .done-panel .dp-title {
+    font-size: 14px; font-weight: 800; color: var(--c-done);
+    margin-bottom: 4px;
+  }
+  .done-panel .dp-body {
+    font-size: 13px; line-height: 1.55; color: var(--ink);
+  }
+  .done-panel .dp-dl-btn {
+    background: var(--c-done); color: #fff; border: 0; border-radius: 7px;
+    padding: 5px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    vertical-align: middle;
+  }
+  .done-panel .dp-dl-btn:hover { filter: brightness(1.08); }
 
   /* ---------- error banner ---------- */
   .error-banner {
@@ -815,6 +848,10 @@
 
     <div class="field-label" data-i18n="checklist">Requirements checklist</div>
     <textarea id="checklist" data-i18n-placeholder="checklistPlaceholder" placeholder="1. Build a Flask health-check endpoint.&#10;2. Add a SQLite model...&#10;3. ..."></textarea>
+    <div class="checklist-help">
+      <span class="ch-tip" data-i18n="checklistTip">💡 One requirement per line. The more specific, the better — name the route, the fields, the exact behavior on edge cases.</span>
+      <button type="button" class="ch-example-btn" id="insert-example-btn" data-i18n="insertExample">Insert an example</button>
+    </div>
 
     <div class="model-row">
       <div class="field-label" data-i18n="plannerModel">Planner model</div>
@@ -878,6 +915,11 @@
       <button class="rh-btn resume" id="btn-resume" data-i18n="resume">Resume</button>
       <button class="rh-btn" id="btn-download" data-i18n="download">Download</button>
       <button class="rh-btn archive" id="btn-archive" data-i18n="archive">Archive</button>
+    </div>
+
+    <div class="done-panel" id="done-panel" style="display:none;">
+      <div class="dp-title" id="done-panel-title"></div>
+      <div class="dp-body" id="done-panel-body"></div>
     </div>
 
     <div class="error-banner" id="error-banner">
@@ -963,6 +1005,14 @@
       blankOption: "— blank —",
       checklist: "Requirements checklist",
       checklistPlaceholder: "1. Build a Flask health-check endpoint.\n2. Add a SQLite model...\n3. ...",
+      checklistTip: "One requirement per line. The more specific, the better — name the route, the fields, and the exact behavior on edge cases.",
+      insertExample: "Insert an example",
+      exampleChecklist: "1. Create a Flask app with a GET /health route returning {\"status\": \"ok\"}.\n2. Add GET /tip?bill=100&percent=15 returning the tip and total as JSON; a negative bill returns HTTP 400.\n3. Add GET /palindrome?text=... returning whether the text is a palindrome, ignoring case, spaces and punctuation.\n4. Write a pytest suite covering every route, including the negative-bill 400 and the punctuation-ignoring palindrome.",
+      donePanelTitle: "✅ All done — here's your project",
+      doneGreenfield: "Your finished code is in runs/{0}/workspace/ — every task was proven by a real test. To run it: open a terminal, cd into that folder, and run  python app.py . Or grab it as a zip:",
+      doneExisting: "The changes are committed on the git branch {0}, one commit per task — your main branch is untouched. Review with  git diff main...{0}  then merge it yourself if you're happy.",
+      doneMock: "This was a demo run (no real API calls) — the output is sample code under runs/<id>/workspace/. For a real build, add your API key and uncheck Demo mode. Grab this sample as a zip:",
+      downloadZip: "Download the code (zip)",
       plannerModel: "Planner model",
       executorModel: "Executor model",
       verifierModel: "Verifier model",
@@ -1076,6 +1126,14 @@
       blankOption: "— 空白 —",
       checklist: "需求清单",
       checklistPlaceholder: "1. 构建一个 Flask 健康检查接口。\n2. 添加一个 SQLite 模型...\n3. ...",
+      checklistTip: "一行写一条需求。越具体越好——写清接口路径、字段、以及边界情况的确切行为。",
+      insertExample: "插入一个例子",
+      exampleChecklist: "1. 用 Flask 写一个 GET /health 接口，返回 {\"status\": \"ok\"}。\n2. 加 GET /tip?bill=100&percent=15，返回小费和总额的 JSON；账单为负数时返回 HTTP 400。\n3. 加 GET /palindrome?text=... 判断是否回文，忽略大小写、空格和标点。\n4. 写 pytest 测试覆盖每个接口，包括负数账单返回 400、忽略标点的回文判断。",
+      donePanelTitle: "✅ 全部完成 — 这是你的成品",
+      doneGreenfield: "你做好的代码在 runs/{0}/workspace/ —— 每个任务都过了真实测试。想运行它:打开终端，cd 到那个文件夹，执行  python app.py 。也可以直接下载成 zip:",
+      doneExisting: "改动已提交在 git 分支 {0} 上，一个任务一个 commit —— 你的主分支没被动过。用  git diff main...{0}  查看，满意就自己合并。",
+      doneMock: "这是演示模式(没有真实调用模型)，产物是示例代码，在 runs/<id>/workspace/。想真实构建，配好 API key 再取消勾选演示模式。也可以下载这份示例:",
+      downloadZip: "下载代码 (zip)",
       plannerModel: "规划器模型",
       executorModel: "执行器模型",
       verifierModel: "验收器模型",
@@ -1305,6 +1363,9 @@
     rhChipVerifier: document.getElementById("rh-chip-verifier"),
     rhChipMock: document.getElementById("rh-chip-mock"),
     rhChipBranch: document.getElementById("rh-chip-branch"),
+    donePanel: document.getElementById("done-panel"),
+    donePanelTitle: document.getElementById("done-panel-title"),
+    donePanelBody: document.getElementById("done-panel-body"),
     rhCost: document.getElementById("rh-cost"),
     rhClock: document.getElementById("rh-clock"),
     btnStop: document.getElementById("btn-stop"),
@@ -1607,7 +1668,37 @@
       state.runStartedAt = detail.created_at;
     }
 
-    // surface a friendly error, if any, was already handled via events; nothing else here.
+    renderDonePanel(detail, { active: active, complete: complete, isMock: isMock, branch: branch });
+  }
+
+  // "It finished — now what?" The single most-asked new-user question. When a
+  // completed run is selected, spell out in plain language WHERE the result is
+  // and HOW to use it, tailored to the mode (greenfield / existing repo / demo).
+  function renderDonePanel(detail, ctx) {
+    var panel = el.donePanel;
+    if (!panel) return;
+    if (ctx.active || !ctx.complete) { panel.style.display = "none"; return; }
+    var runId = detail.run_id || state.runId || "";
+    var body, showDownload = true;
+    if (ctx.branch) {
+      body = t("doneExisting", ctx.branch); showDownload = false;
+    } else if (ctx.isMock) {
+      body = t("doneMock");
+    } else {
+      body = t("doneGreenfield", runId);
+    }
+    el.donePanelTitle.textContent = t("donePanelTitle");
+    el.donePanelBody.textContent = body;
+    if (showDownload) {
+      var dl = document.createElement("button");
+      dl.type = "button";
+      dl.className = "dp-dl-btn";
+      dl.textContent = t("downloadZip");
+      dl.addEventListener("click", function () { el.btnDownload.click(); });
+      el.donePanelBody.appendChild(document.createTextNode("  "));
+      el.donePanelBody.appendChild(dl);
+    }
+    panel.style.display = "block";
   }
 
   function renderWall(detail) {
@@ -2054,6 +2145,18 @@
   var welcomedBefore = false;
   try { welcomedBefore = window.localStorage.getItem("foreman_welcomed") === "1"; } catch (err) { /* ok */ }
   if (!welcomedBefore) showWelcome();
+
+  // "Insert an example" fills the checklist with a well-formed sample so a
+  // blank-slate user sees what a good requirements list looks like (route +
+  // fields + edge case + tests) instead of facing an empty box.
+  var insertExampleBtn = document.getElementById("insert-example-btn");
+  if (insertExampleBtn) {
+    insertExampleBtn.addEventListener("click", function () {
+      el.checklist.value = t("exampleChecklist");
+      el.templateSelect.value = "";
+      el.checklist.focus();
+    });
+  }
 
   // ---------------- boot ----------------
 
