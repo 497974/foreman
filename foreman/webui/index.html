@@ -3,27 +3,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
+    /* Steel blue + safety orange on cool concrete grey — an industrial
+       control-panel palette, not the warm-cream/rounded look that reads as
+       templated. The neutral is deliberately cool (blue bias toward the
+       steel accent), never a warm cream. */
     --steel: #1E4E79;
-    --steel-dark: #163a5c;
+    --steel-dark: #14395c;
     --steel-light: #4c7ba3;
+    --steel-soft: #dbe4ee;
     --orange: #D9700A;
-    --orange-light: #f2a35c;
-    --bg: #f4f2ee;
+    --orange-light: #ef9a4e;
+    --bg: #e6eaee;
     --panel: #ffffff;
-    --ink: #1c2530;
-    --ink-soft: #5b6672;
-    --line: #d9d4c9;
+    --panel-2: #f1f4f7;
+    --ink: #15202b;
+    --ink-soft: #556372;
+    --line: #ccd3da;
 
-    --c-done: #2f9e44;
-    --c-done-bg: #e6f7ea;
+    --c-done: #2f8f44;
+    --c-done-bg: #e2efe6;
     --c-blocked: #c0392b;
-    --c-blocked-bg: #fce8e6;
-    --c-amber: #d9a406;
-    --c-amber-bg: #fff6dc;
-    --c-grey: #9aa2ab;
-    --c-grey-bg: #eceeef;
+    --c-blocked-bg: #f6e7e5;
+    --c-amber: #c78a09;
+    --c-amber-bg: #f5eed7;
+    --c-grey: #8b95a0;
+    --c-grey-bg: #e5e9ed;
 
-    font-family: "Segoe UI", "Consolas", Tahoma, Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    /* Hazard-stripe accent (caution-tape diagonal) — the signature detail. */
+    --hazard: repeating-linear-gradient(-45deg,
+      #D9700A 0 14px, #14395c 14px 28px);
+
+    font-family: "Segoe UI Variable", "Segoe UI", Tahoma, Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
   }
 
   * { box-sizing: border-box; }
@@ -48,32 +58,41 @@
 
   /* ---------- top header ---------- */
   header {
-    background: var(--steel);
+    background: var(--steel-dark);
     color: #fff;
-    padding: 10px 20px;
+    padding: 12px 20px 14px;
     display: flex;
     align-items: center;
     gap: 14px;
-    border-bottom: 3px solid var(--orange);
     flex-shrink: 0;
     position: relative;
     z-index: 60;
   }
+  /* caution-tape strip along the bottom edge — the industrial signature */
+  header::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0; height: 5px;
+    background: var(--hazard);
+    opacity: 0.9;
+  }
 
   header .brand {
-    font-weight: 700;
-    font-size: 18px;
-    letter-spacing: 0.02em;
+    font-weight: 800;
+    font-size: 19px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 
   header .brand .mark {
     display: inline-block;
-    width: 12px; height: 12px;
+    width: 16px; height: 16px;
     background: var(--orange);
-    transform: rotate(45deg);
+    /* hexagonal bolt-head — a machined part, not a generic rounded blob */
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
   }
 
   header .spacer { flex: 1; }
@@ -307,22 +326,24 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 12px 13px;
-    border-radius: 10px;
+    padding: 11px 12px;
+    border-radius: 3px;
     cursor: pointer;
     border: 1px solid var(--line);
+    border-left: 3px solid var(--line);
     background: var(--panel);
     transition: border-color .12s, background .12s;
   }
-  .run-card:hover { background: var(--bg); border-color: var(--steel-light); }
+  .run-card:hover { background: var(--panel-2); }
   .run-card.selected {
-    border-color: var(--steel); border-width: 2px; padding: 11px 12px;
-    background: var(--steel-soft, var(--c-grey-bg));
+    border-left-color: var(--steel);
+    background: var(--steel-soft);
   }
   .rc-head { display: flex; align-items: center; gap: 8px; }
   .rc-badge {
-    font-size: 13px; font-weight: 800; letter-spacing: .02em;
-    padding: 3px 11px; border-radius: 20px; flex-shrink: 0;
+    font-size: 11px; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 2px 8px; border-radius: 2px; flex-shrink: 0;
   }
   .rc-count {
     font-family: Consolas, monospace; font-size: 15px; font-weight: 700;
@@ -805,10 +826,18 @@
     gap: 12px; padding: 10px 32px 4px 32px;
   }
   .feature-card {
-    border: 1px solid var(--line); border-radius: 10px;
-    padding: 12px 14px; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 4px;
+    padding: 12px 14px; background: var(--panel-2);
   }
-  .feature-card h4 { margin: 0 0 5px 0; font-size: 14px; color: var(--steel-dark); }
+  .feature-card h4 {
+    margin: 0 0 5px 0; font-size: 13px; color: var(--steel-dark);
+    text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .feature-card h4::before {
+    content: ""; width: 7px; height: 7px; background: var(--orange);
+    flex-shrink: 0;
+  }
   .feature-card .what { font-size: 12.8px; color: var(--ink); line-height: 1.5; margin: 0 0 6px 0; }
   .feature-card .how {
     font-size: 12.3px; color: var(--ink-soft); line-height: 1.5; margin: 0;
@@ -954,7 +983,6 @@
 <div class="welcome-overlay" id="welcome-overlay" hidden>
   <div class="welcome-panel">
     <div class="welcome-hero">
-      <span class="hard-hat">👷</span>
       <h1 data-i18n="wTitle">Foreman — your AI foreman</h1>
       <p class="tagline" data-i18n="wTagline">Give it a long requirements list. It plans the work, hires an AI to build each piece, REFUSES to accept anything that fails a real test, and keeps going until everything is green — even across crashes.</p>
     </div>
@@ -966,24 +994,24 @@
     </div>
 
     <div class="welcome-actions">
-      <button type="button" class="btn-demo" id="welcome-demo-btn" data-i18n="wDemoBtn">▶ Try a free demo first (no key, no cost)</button>
+      <button type="button" class="btn-demo" id="welcome-demo-btn" data-i18n="wDemoBtn">Try a free demo first (no key, no cost)</button>
       <button type="button" class="btn-enter" id="welcome-enter-btn" data-i18n="wEnterBtn">Start using Foreman</button>
     </div>
 
     <div class="welcome-features-title" data-i18n="wFeaturesTitle">Everything it can do — and how to use each one</div>
     <div class="welcome-grid">
-      <div class="feature-card"><h4>📝 <span data-i18n="wF1T">New Run</span></h4><p class="what" data-i18n="wF1W">Turns a requirements list into a fully built, fully tested project.</p><p class="how" data-i18n="wF1H">HOW: left panel → paste your list (one item per line) → Start Foreman.</p></div>
-      <div class="feature-card"><h4>🎬 <span data-i18n="wF2T">Demo mode</span></h4><p class="what" data-i18n="wF2W">The whole product with fake workers — zero API key, zero cost, offline.</p><p class="how" data-i18n="wF2H">HOW: tick "Demo mode" before starting. Great first click.</p></div>
-      <div class="feature-card"><h4>📋 <span data-i18n="wF3T">Templates</span></h4><p class="what" data-i18n="wF3W">Ready-made requirement lists (expense API, World Cup predictor…).</p><p class="how" data-i18n="wF3H">HOW: "Template" dropdown → pick one → it fills the box for you.</p></div>
-      <div class="feature-card"><h4>🧠 <span data-i18n="wF4T">Per-role models</span></h4><p class="what" data-i18n="wF4W">Planner, builder and inspector can each use a different Qwen model.</p><p class="how" data-i18n="wF4H">HOW: three dropdowns under the checklist. Defaults are already set to free-quota models — just leave them.</p></div>
-      <div class="feature-card"><h4>📂 <span data-i18n="wF5T">Edit a REAL project</span></h4><p class="what" data-i18n="wF5W">Points Foreman at your actual code repo — safely: it works on its own branch, never touches yours, never pushes.</p><p class="how" data-i18n="wF5H">HOW: fill "Existing project folder" + tick the confirmation. Review with git diff afterwards; merging is always your call.</p></div>
-      <div class="feature-card"><h4>🧱 <span data-i18n="wF6T">Status wall + live feed</span></h4><p class="what" data-i18n="wF6W">One cell per task; the event feed shows every claim, verdict and retry as it happens.</p><p class="how" data-i18n="wF6H">HOW: click any run in the "Runs" list. Green=done, amber=working, red=stuck.</p></div>
-      <div class="feature-card"><h4>✅ <span data-i18n="wF7T">Real test gates</span></h4><p class="what" data-i18n="wF7W">A task counts as done ONLY after its tests actually pass. "Trust me, it's done" doesn't fly here.</p><p class="how" data-i18n="wF7H">HOW: automatic. Seeing REJECT in the feed is the system working — the fix comes in the next attempt.</p></div>
-      <div class="feature-card"><h4>⚖️ <span data-i18n="wF8T">Appeals court</span></h4><p class="what" data-i18n="wF8W">If the builder thinks a rejection was unfair, it can appeal once — a stronger model reads the evidence and rules.</p><p class="how" data-i18n="wF8H">HOW: automatic. Watch for amber DISPUTE / ARBITRATION badges in the event feed.</p></div>
-      <div class="feature-card"><h4>⏸️ <span data-i18n="wF9T">Stop & Resume</span></h4><p class="what" data-i18n="wF9W">Stop gracefully at the next task boundary. Crashes, closed laptops, dead quota — nothing loses progress.</p><p class="how" data-i18n="wF9H">HOW: Stop / Resume buttons on the run header. Finished tasks are never redone.</p></div>
-      <div class="feature-card"><h4>💰 <span data-i18n="wF10T">Live cost meter</span></h4><p class="what" data-i18n="wF10W">Each run shows tokens spent and an estimated dollar cost, live.</p><p class="how" data-i18n="wF10H">HOW: automatic, on the run header (≈$0.0123 · 45,678 tok). Estimate only — not a bill.</p></div>
-      <div class="feature-card"><h4>📦 <span data-i18n="wF11T">Download & archive</span></h4><p class="what" data-i18n="wF11W">Grab the finished code as a zip; archive old runs to keep the list tidy.</p><p class="how" data-i18n="wF11H">HOW: buttons on each run row / run header after it finishes.</p></div>
-      <div class="feature-card"><h4>🌐 <span data-i18n="wF12T">Web search + Hermes</span></h4><p class="what" data-i18n="wF12W">The builder can search the live internet (no key needed). Power users can even swap in the hermes-agent as the builder.</p><p class="how" data-i18n="wF12H">HOW: web search is automatic when a task needs facts. Hermes: see docs/HERMES.md (one env var).</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF1T">New Run</span></h4><p class="what" data-i18n="wF1W">Turns a requirements list into a fully built, fully tested project.</p><p class="how" data-i18n="wF1H">HOW: left panel → paste your list (one item per line) → Start Foreman.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF2T">Demo mode</span></h4><p class="what" data-i18n="wF2W">The whole product with fake workers — zero API key, zero cost, offline.</p><p class="how" data-i18n="wF2H">HOW: tick "Demo mode" before starting. Great first click.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF3T">Templates</span></h4><p class="what" data-i18n="wF3W">Ready-made requirement lists (expense API, World Cup predictor…).</p><p class="how" data-i18n="wF3H">HOW: "Template" dropdown → pick one → it fills the box for you.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF4T">Per-role models</span></h4><p class="what" data-i18n="wF4W">Planner, builder and inspector can each use a different Qwen model.</p><p class="how" data-i18n="wF4H">HOW: three dropdowns under the checklist. Defaults are already set to free-quota models — just leave them.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF5T">Edit a REAL project</span></h4><p class="what" data-i18n="wF5W">Points Foreman at your actual code repo — safely: it works on its own branch, never touches yours, never pushes.</p><p class="how" data-i18n="wF5H">HOW: fill "Existing project folder" + tick the confirmation. Review with git diff afterwards; merging is always your call.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF6T">Status wall + live feed</span></h4><p class="what" data-i18n="wF6W">One cell per task; the event feed shows every claim, verdict and retry as it happens.</p><p class="how" data-i18n="wF6H">HOW: click any run in the "Runs" list. Green=done, amber=working, red=stuck.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF7T">Real test gates</span></h4><p class="what" data-i18n="wF7W">A task counts as done ONLY after its tests actually pass. "Trust me, it's done" doesn't fly here.</p><p class="how" data-i18n="wF7H">HOW: automatic. Seeing REJECT in the feed is the system working — the fix comes in the next attempt.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF8T">Appeals court</span></h4><p class="what" data-i18n="wF8W">If the builder thinks a rejection was unfair, it can appeal once — a stronger model reads the evidence and rules.</p><p class="how" data-i18n="wF8H">HOW: automatic. Watch for amber DISPUTE / ARBITRATION badges in the event feed.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF9T">Stop & Resume</span></h4><p class="what" data-i18n="wF9W">Stop gracefully at the next task boundary. Crashes, closed laptops, dead quota — nothing loses progress.</p><p class="how" data-i18n="wF9H">HOW: Stop / Resume buttons on the run header. Finished tasks are never redone.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF10T">Live cost meter</span></h4><p class="what" data-i18n="wF10W">Each run shows tokens spent and an estimated dollar cost, live.</p><p class="how" data-i18n="wF10H">HOW: automatic, on the run header (≈$0.0123 · 45,678 tok). Estimate only — not a bill.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF11T">Download & archive</span></h4><p class="what" data-i18n="wF11W">Grab the finished code as a zip; archive old runs to keep the list tidy.</p><p class="how" data-i18n="wF11H">HOW: buttons on each run row / run header after it finishes.</p></div>
+      <div class="feature-card"><h4><span data-i18n="wF12T">Web search + Hermes</span></h4><p class="what" data-i18n="wF12W">The builder can search the live internet (no key needed). Power users can even swap in the hermes-agent as the builder.</p><p class="how" data-i18n="wF12H">HOW: web search is automatic when a task needs facts. Hermes: see docs/HERMES.md (one env var).</p></div>
     </div>
 
     <div class="welcome-foot" data-i18n="wFoot">Honest limits: real runs need a DashScope API key in the .env file (Demo mode doesn't). Tests are pytest-style today. If a task fails 3 times it stops and waits for you instead of looping forever — that's a feature.</div>
@@ -1008,7 +1036,7 @@
       checklistTip: "One requirement per line. The more specific, the better — name the route, the fields, and the exact behavior on edge cases.",
       insertExample: "Insert an example",
       exampleChecklist: "1. Create a Flask app with a GET /health route returning {\"status\": \"ok\"}.\n2. Add GET /tip?bill=100&percent=15 returning the tip and total as JSON; a negative bill returns HTTP 400.\n3. Add GET /palindrome?text=... returning whether the text is a palindrome, ignoring case, spaces and punctuation.\n4. Write a pytest suite covering every route, including the negative-bill 400 and the punctuation-ignoring palindrome.",
-      donePanelTitle: "✅ All done — here's your project",
+      donePanelTitle: "All done — here's your project",
       doneGreenfield: "Your finished code is in runs/{0}/workspace/ — every task was proven by a real test. To run it: open a terminal, cd into that folder, and run  python app.py . Or grab it as a zip:",
       doneExisting: "The changes are committed on the git branch {0}, one commit per task — your main branch is untouched. Review with  git diff main...{0}  then merge it yourself if you're happy.",
       doneMock: "This was a demo run (no real API calls) — the output is sample code under runs/<id>/workspace/. For a real build, add your API key and uncheck Demo mode. Grab this sample as a zip:",
@@ -1103,7 +1131,7 @@
       wStep1T: "Paste your list", wStep1B: "Type requirements one per line in \"New Run\" — or pick a ready-made template.",
       wStep2T: "Press Start", wStep2B: "Watch the status wall: each cell is one task going grey → amber → green.",
       wStep3T: "Collect the goods", wStep3B: "When all cells are green, download the finished code as a zip. Every item was proven by a real test.",
-      wDemoBtn: "▶ Try a free demo first (no key, no cost)",
+      wDemoBtn: "Try a free demo first (no key, no cost)",
       wEnterBtn: "Start using Foreman",
       wFeaturesTitle: "Everything it can do — and how to use each one",
       wF1T: "New Run", wF1W: "Turns a requirements list into a fully built, fully tested project.", wF1H: "HOW: left panel → paste your list (one item per line) → Start Foreman.",
@@ -1129,7 +1157,7 @@
       checklistTip: "一行写一条需求。越具体越好——写清接口路径、字段、以及边界情况的确切行为。",
       insertExample: "插入一个例子",
       exampleChecklist: "1. 用 Flask 写一个 GET /health 接口，返回 {\"status\": \"ok\"}。\n2. 加 GET /tip?bill=100&percent=15，返回小费和总额的 JSON；账单为负数时返回 HTTP 400。\n3. 加 GET /palindrome?text=... 判断是否回文，忽略大小写、空格和标点。\n4. 写 pytest 测试覆盖每个接口，包括负数账单返回 400、忽略标点的回文判断。",
-      donePanelTitle: "✅ 全部完成 — 这是你的成品",
+      donePanelTitle: "全部完成 · 这是你的成品",
       doneGreenfield: "你做好的代码在 runs/{0}/workspace/ —— 每个任务都过了真实测试。想运行它:打开终端，cd 到那个文件夹，执行  python app.py 。也可以直接下载成 zip:",
       doneExisting: "改动已提交在 git 分支 {0} 上，一个任务一个 commit —— 你的主分支没被动过。用  git diff main...{0}  查看，满意就自己合并。",
       doneMock: "这是演示模式(没有真实调用模型)，产物是示例代码，在 runs/<id>/workspace/。想真实构建，配好 API key 再取消勾选演示模式。也可以下载这份示例:",
@@ -1224,7 +1252,7 @@
       wStep1T: "贴上你的清单", wStep1B: "在「新建运行」里一行写一条需求,或直接从模板下拉框选一份现成的。",
       wStep2T: "点开始", wStep2B: "盯着状态墙看:每个格子是一个任务,灰色→黄色→绿色。",
       wStep3T: "收货", wStep3B: "全绿后一键下载做好的代码。每一条都被真实测试验证过,不是 AI 嘴上说做完了。",
-      wDemoBtn: "▶ 先看免费演示(不要 Key、不花钱)",
+      wDemoBtn: "先看免费演示(不要 Key、不花钱)",
       wEnterBtn: "开始使用 Foreman",
       wFeaturesTitle: "全部功能一览 — 每个都写了用法",
       wF1T: "新建运行", wF1W: "把一份需求清单变成一个完整做好、全部测试通过的项目。", wF1H: "用法:左侧面板 → 贴入需求(一行一条)→ 点「启动 Foreman」。",
@@ -1562,8 +1590,11 @@
       var mockChip = r.mock ? '<span class="rc-mock">' + escapeHtml(t("mockChip")) + '</span>' : "";
       var costEl = cost ? '<span class="rc-cost tabular">' + escapeHtml(cost) + '</span>' : "";
       var shortId = escapeHtml(r.run_id).replace(/^run_/, "");
+      // The left stripe carries the STATUS color — a functional severity
+      // stripe (scan the column by color), not a decorative accent rail.
+      var stripe = sel ? "" : ' style="border-left-color:' + s.fg + '"';
       return (
-        '<div class="run-card' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '">' +
+        '<div class="run-card' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '"' + stripe + '>' +
           '<div class="rc-head">' +
             '<span class="rc-badge" style="color:' + s.fg + ';background:' + s.bg + '">' + escapeHtml(s.label) + '</span>' +
             (count ? '<span class="rc-count">' + count + '</span>' : "") +
