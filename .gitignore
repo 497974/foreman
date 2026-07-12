@@ -25,3 +25,9 @@ fc/vendor/
 # generated evaluation workspaces are receipts we keep locally, not in git
 evals/workspaces_*/
 evals_shakedown*.log
+
+# comparison harness artifacts (keep the .py/.md, ignore generated app outputs)
+comparison/foreman_runs/
+comparison/toolkit_foreman/
+comparison/*_app/
+comparison/eval_*/

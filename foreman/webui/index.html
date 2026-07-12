@@ -179,9 +179,9 @@
   }
 
   .left-panel {
-    width: 320px;
+    width: 360px;
     flex-shrink: 0;
-    max-width: 38%;
+    max-width: 42%;
     background: var(--panel);
     border-right: 1px solid var(--line);
     padding: 14px;
@@ -192,7 +192,7 @@
   }
 
   .left-panel h2 {
-    font-size: 12px;
+    font-size: 13.5px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--ink-soft);
@@ -287,51 +287,51 @@
   .runs-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
     overflow-y: auto;
   }
-  .run-row {
+  /* ---- run cards (redesigned: status-led, human-readable title) ---- */
+  .run-card {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 8px;
-    border-radius: 4px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 13px;
+    border-radius: 10px;
     cursor: pointer;
-    border: 1px solid transparent;
-    font-size: 12px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    transition: border-color .12s, background .12s;
   }
-  .run-row:hover { background: var(--bg); }
-  .run-row.selected { background: var(--c-grey-bg); border-color: var(--steel-light); }
-  .run-row .dot {
-    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  .run-card:hover { background: var(--bg); border-color: var(--steel-light); }
+  .run-card.selected {
+    border-color: var(--steel); border-width: 2px; padding: 11px 12px;
+    background: var(--steel-soft, var(--c-grey-bg));
   }
-  .run-row .rid {
-    font-family: Consolas, monospace;
-    font-weight: 700;
-    color: var(--steel);
-    flex-shrink: 0;
-    max-width: 92px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .rc-head { display: flex; align-items: center; gap: 8px; }
+  .rc-badge {
+    font-size: 13px; font-weight: 800; letter-spacing: .02em;
+    padding: 3px 11px; border-radius: 20px; flex-shrink: 0;
   }
-  .run-row .rtime {
-    color: var(--ink-soft);
-    flex-shrink: 0;
+  .rc-count {
+    font-family: Consolas, monospace; font-size: 15px; font-weight: 700;
+    color: var(--ink); flex-shrink: 0;
   }
-  .run-row .rcost {
-    color: var(--ink-soft);
-    margin-left: auto;
-    flex-shrink: 0;
+  .rc-mock {
+    background: var(--orange); color: #fff; font-size: 10px; font-weight: 800;
+    padding: 2px 8px; border-radius: 10px; margin-left: auto; flex-shrink: 0;
   }
-  .run-row .mock-chip {
-    background: var(--orange);
-    color: #fff;
-    font-size: 9.5px;
-    font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 3px;
-    flex-shrink: 0;
+  .rc-cost {
+    font-family: Consolas, monospace; font-size: 12px; color: var(--ink-soft);
+    flex-shrink: 0; margin-left: auto;
+  }
+  .rc-mock + .rc-cost { margin-left: 6px; }
+  .rc-title {
+    font-size: 13.5px; color: var(--ink); line-height: 1.35;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .rc-meta {
+    font-family: Consolas, monospace; font-size: 11px; color: var(--ink-soft);
+    display: flex; gap: 8px; align-items: center;
   }
   .runs-empty-hint {
     color: var(--ink-soft);
@@ -1046,6 +1046,7 @@
       outcome_rejected_by_verifier: "rejected by verifier",
       outcome_crashed: "crashed",
       outcome_timeout: "timeout",
+      runDone: "Done", runRunning: "Running", runBlocked: "Blocked", runIdle: "Idle",
 
       wTitle: "Foreman — your AI foreman",
       wTagline: "Give it a long requirements list. It plans the work, hires an AI to build each piece, REFUSES to accept anything that fails a real test, and keeps going until everything is green — even across crashes.",
@@ -1158,6 +1159,7 @@
       outcome_rejected_by_verifier: "被验收器驳回",
       outcome_crashed: "崩溃",
       outcome_timeout: "超时",
+      runDone: "完成", runRunning: "进行中", runBlocked: "受阻", runIdle: "就绪",
 
       wTitle: "Foreman 工头 — 给 AI 派活、验收、盯进度",
       wTagline: "把一长串需求清单交给它:它负责拆解任务、雇 AI 逐条施工、用真实测试验收(不过测试就打回重做),一直干到全部变绿——中途断电断网也不丢进度。",
@@ -1454,12 +1456,24 @@
 
   // ---------------- runs list (sidebar) ----------------
 
-  function statusDotColor(run) {
+  function statusInfo(run) {
     var c = run.counts || {};
-    if (run.complete && (c.blocked || 0) === 0) return "var(--c-done)";
-    if ((c.blocked || 0) > 0) return "var(--c-blocked)";
-    if (run.active) return "var(--c-amber)";
-    return "var(--c-grey)";
+    if ((c.blocked || 0) > 0) return { label: t("runBlocked"), fg: "var(--c-blocked)", bg: "var(--c-blocked-bg)" };
+    if (run.complete) return { label: t("runDone"), fg: "var(--c-done)", bg: "var(--c-done-bg)" };
+    if (run.active) return { label: t("runRunning"), fg: "var(--c-amber)", bg: "var(--c-amber-bg)" };
+    return { label: t("runIdle"), fg: "var(--c-grey)", bg: "var(--c-grey-bg)" };
+  }
+
+  function runTitle(run) {
+    // Human-readable label = first meaningful line of the requirements,
+    // not the cryptic run_id. Strip a leading markdown "# " heading marker
+    // and list numbering so "1. Build a Flask app" reads cleanly.
+    var raw = (run.requirements_preview || "").split("\n");
+    for (var i = 0; i < raw.length; i++) {
+      var line = raw[i].replace(/^#+\s*/, "").trim();
+      if (line) return line;
+    }
+    return run.run_id;
   }
 
   function refreshRunsList() {
@@ -1478,19 +1492,28 @@
     }
     el.runsList.innerHTML = runs.map(function (r) {
       var sel = r.run_id === state.runId ? " selected" : "";
+      var s = statusInfo(r);
+      var c = r.counts || {};
+      var total = r.total_tasks || 0;
+      var doneN = c.done || 0;
+      var count = total ? (doneN + "/" + total) : "";
       var cost = (r.est_usd !== null && r.est_usd !== undefined) ? fmtUsd(r.est_usd) : "";
-      var mockChip = r.mock ? '<span class="mock-chip" title="' + escapeHtml(t("mockChipTooltip")) + '">' + escapeHtml(t("mockChip")) + '</span>' : "";
+      var mockChip = r.mock ? '<span class="rc-mock">' + escapeHtml(t("mockChip")) + '</span>' : "";
+      var costEl = cost ? '<span class="rc-cost tabular">' + escapeHtml(cost) + '</span>' : "";
+      var shortId = escapeHtml(r.run_id).replace(/^run_/, "");
       return (
-        '<div class="run-row' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '">' +
-          '<span class="dot" style="background:' + statusDotColor(r) + '"></span>' +
-          '<span class="rid">' + escapeHtml(r.run_id) + '</span>' +
-          '<span class="rtime tabular">' + fmtHHMM(r.created_at) + '</span>' +
-          mockChip +
-          '<span class="rcost tabular">' + escapeHtml(cost) + '</span>' +
+        '<div class="run-card' + sel + '" data-run-id="' + escapeHtml(r.run_id) + '">' +
+          '<div class="rc-head">' +
+            '<span class="rc-badge" style="color:' + s.fg + ';background:' + s.bg + '">' + escapeHtml(s.label) + '</span>' +
+            (count ? '<span class="rc-count">' + count + '</span>' : "") +
+            mockChip + costEl +
+          '</div>' +
+          '<div class="rc-title" title="' + escapeHtml(runTitle(r)) + '">' + escapeHtml(runTitle(r)) + '</div>' +
+          '<div class="rc-meta"><span>' + shortId.slice(0, 8) + '</span><span>·</span><span>' + fmtHHMM(r.created_at) + '</span></div>' +
         '</div>'
       );
     }).join("");
-    Array.prototype.forEach.call(el.runsList.querySelectorAll(".run-row"), function (rowEl) {
+    Array.prototype.forEach.call(el.runsList.querySelectorAll(".run-card"), function (rowEl) {
       rowEl.addEventListener("click", function () {
         selectRun(rowEl.getAttribute("data-run-id"));
       });

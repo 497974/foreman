@@ -196,6 +196,13 @@ def create_with_fallback(
             tried.add(next_model)
             on_model_fallback(current, next_model)
             current = next_model
+            # Each model entering the chain gets its OWN full retry budgets.
+            # Without this reset, a primary that burned all its rate-limit /
+            # transient retries hands an already-exhausted counter to the
+            # fallback model, which then gets far fewer (or zero) waits before
+            # being declared dead — defeating the point of having a fallback.
+            rate_limit_used = 0
+            transient_used = 0
 
 
 def chat_json(

@@ -168,6 +168,19 @@ Run the verification command for this task (its test_strategy) via
 run_command before calling done. You cannot claim completion without it
 passing — a green run is the minimum bar, not optional polish.
 
+TEST ISOLATION IS MANDATORY. When your tests touch a database, a file, or
+any global/shared state, EACH test must run against a clean, independent
+state — otherwise rows or state from one test leak into the next and the
+suite fails intermittently (this is the single most common way a correct
+implementation still gets rejected here). For a database, use a FRESH
+in-memory database per test via a fixture (e.g. an in-memory SQLite created
+in a pytest fixture and torn down after each test), never a persistent
+on-disk DB shared across tests. For a Flask app, expose an app factory or a
+config hook so the test can point it at a throwaway DB. If the app writes to
+a default file/DB, the tests must not depend on it being empty — they must
+create and reset their own. Verify by running the suite twice in a row: a
+correctly isolated suite passes identically both times.
+
 If a previous attempt was rejected, the verifier feedback quoted in this
 task's history is authoritative. Fix exactly what it says is wrong; do not
 re-litigate the feedback or redo work it says already passed.

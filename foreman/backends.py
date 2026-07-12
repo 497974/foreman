@@ -114,8 +114,68 @@ def _snapshot(root: Path) -> dict[str, tuple[int, float]]:
 
 
 def _changed_files(before: dict, after: dict) -> list[str]:
-    """Files that are new or whose (size, mtime) changed after the run."""
-    return sorted(f for f, meta in after.items() if before.get(f) != meta)
+    """Files that were created, modified, OR deleted during the run.
+
+    Deletions matter: an agent whose only change is removing a file would
+    otherwise report zero changed files, which (a) understates files_touched
+    and (b) can trip the exit-0-but-no-changes false-success guard into
+    classifying a correct delete-only task as CRASHED. Comparing both
+    directions catches created/modified (in after, differing) and deleted
+    (in before, absent from after)."""
+    created_or_modified = {f for f, meta in after.items() if before.get(f) != meta}
+    deleted = {f for f in before if f not in after}
+    return sorted(created_or_modified | deleted)
+
+
+def _kill_tree(proc) -> None:
+    """Kill a process AND its children. An agent CLI spawns its own
+    subprocesses (pytest, a dev server) as tool calls; a plain single-process
+    kill on timeout orphans those, and a hung child (infinite loop, a server
+    that never returns) keeps running and can dirty the next task's snapshot.
+    On Windows taskkill /T walks the whole tree; POSIX best-effort kills the
+    direct child."""
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True, timeout=15,
+            )
+        else:
+            proc.kill()
+    except Exception:  # noqa: BLE001 — cleanup is best-effort, never fatal
+        pass
+
+
+def _run_cli_capture(cmd, cwd, env, timeout_s):
+    """Run an agent CLI, capturing UTF-8 output; return
+    ``(exit_code, timed_out, stdout, stderr)``.
+
+    Robust where subprocess.run was not:
+    * A LAUNCH failure (OSError — a missing binary, or on Windows the ~8191-char
+      command-line limit when a long retry prompt is passed via ``-p``) is
+      reported as exit -1 / not-timed-out (which _build_handoff maps to CRASHED)
+      instead of propagating and aborting the entire orchestrator loop.
+    * On TIMEOUT the whole process TREE is killed (see _kill_tree), not just the
+      top-level CLI.
+    """
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=str(cwd), env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            encoding="utf-8", errors="replace",
+        )
+    except OSError as exc:
+        return -1, False, "", f"failed to launch agent CLI: {exc}"
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_s)
+        return proc.returncode, False, stdout or "", stderr or ""
+    except subprocess.TimeoutExpired:
+        _kill_tree(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=10)
+        except Exception:  # noqa: BLE001
+            stdout, stderr = "", ""
+        return -1, True, stdout or "", stderr or ""
 
 
 def find_qwen_bin() -> Optional[str]:
@@ -205,21 +265,13 @@ class QwenCodeBackend:
         cmd = [self.bin, "-p", prompt, "--yolo"]
 
         before = _snapshot(root)
-        timed_out = False
-        try:
-            proc = subprocess.run(
-                cmd, cwd=str(root), env=env, capture_output=True,
-                # qwen-code is a Node CLI that emits UTF-8 (box-drawing, emoji).
-                # Windows' default locale decode (cp1252) crashes on it, so pin
-                # UTF-8 and never let a stray byte kill the run.
-                encoding="utf-8", errors="replace",
-                timeout=self.timeout_s,
-            )
-            exit_code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
-        except subprocess.TimeoutExpired as exc:
-            timed_out, exit_code = True, -1
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        # UTF-8 capture + launch-failure and process-tree-kill handling live in
+        # _run_cli_capture (qwen-code is a Node CLI emitting box-drawing/emoji;
+        # cp1252 decode would crash, and a long -p prompt can exceed Windows'
+        # command-line limit).
+        exit_code, timed_out, stdout, stderr = _run_cli_capture(
+            cmd, root, env, self.timeout_s
+        )
         after = _snapshot(root)
 
         return _build_handoff(
@@ -287,19 +339,9 @@ class HermesBackend:
         cmd = [self.bin, "-z", prompt, "--yolo"]
 
         before = _snapshot(root)
-        timed_out = False
-        try:
-            proc = subprocess.run(
-                cmd, cwd=str(root), env=env, capture_output=True,
-                # Same Windows cp1252 guard as qwen-code: agent CLIs emit UTF-8.
-                encoding="utf-8", errors="replace",
-                timeout=self.timeout_s,
-            )
-            exit_code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
-        except subprocess.TimeoutExpired as exc:
-            timed_out, exit_code = True, -1
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        exit_code, timed_out, stdout, stderr = _run_cli_capture(
+            cmd, root, env, self.timeout_s
+        )
         after = _snapshot(root)
 
         changed = _changed_files(before, after)

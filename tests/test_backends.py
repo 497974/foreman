@@ -123,14 +123,14 @@ def test_qwen_backend_execute_success(tmp_path, monkeypatch):
     ws = Workspace(tmp_path)
     captured = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_capture(cmd, cwd, env, timeout_s):
         captured["cmd"] = cmd
-        captured["env"] = kwargs.get("env", {})
+        captured["env"] = env
         # simulate qwen-code writing a file into the workspace
         (tmp_path / "hello.py").write_text("print('hi')", encoding="utf-8")
-        return types.SimpleNamespace(returncode=0, stdout="Created hello.py", stderr="")
+        return 0, False, "Created hello.py", ""
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     backend = QwenCodeBackend(_FakeSettings(), ws)
     handoff = backend.execute(_task(), [])
 
@@ -148,10 +148,10 @@ def test_qwen_backend_execute_timeout(tmp_path, monkeypatch):
     monkeypatch.setattr(backends, "find_qwen_bin", lambda: "qwen")
     ws = Workspace(tmp_path)
 
-    def fake_run(cmd, **kwargs):
-        raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 1))
+    def fake_capture(cmd, cwd, env, timeout_s):
+        return -1, True, "", ""  # (exit, timed_out, stdout, stderr)
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     handoff = QwenCodeBackend(_FakeSettings(), ws, timeout_s=1).execute(_task(), [])
     assert handoff.outcome == AttemptOutcome.TIMEOUT.value
 
@@ -183,13 +183,12 @@ def test_hermes_backend_execute_success(tmp_path, monkeypatch):
     ws = Workspace(tmp_path / "ws")
     seen = {}
 
-    def fake_run(cmd, cwd=None, env=None, **kw):
+    def fake_capture(cmd, cwd, env, timeout_s):
         seen["cmd"], seen["cwd"], seen["env"] = cmd, cwd, env
         (ws.root / "made_by_hermes.py").write_text("x = 1\n", encoding="utf-8")
-        import subprocess as sp
-        return sp.CompletedProcess(cmd, 0, stdout="did the thing\n", stderr="")
+        return 0, False, "did the thing\n", ""
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     backend = backends.HermesBackend(_FakeSettings(), ws)
     task = _task()
     h = backend.execute(task, [])
@@ -198,7 +197,7 @@ def test_hermes_backend_execute_success(tmp_path, monkeypatch):
     assert "made_by_hermes.py" in h.files_touched
     assert seen["cmd"][0] == "hermes" and "-z" in seen["cmd"]
     assert "--yolo" in seen["cmd"] and "--quiet" not in seen["cmd"]
-    assert seen["cwd"] == str(ws.root)
+    assert str(seen["cwd"]) == str(ws.root)
     assert seen["env"]["HERMES_INFERENCE_MODEL"] == _FakeSettings().executor_model
     assert "hermes backend" in h.handoff_reason
 
@@ -207,11 +206,10 @@ def test_hermes_backend_execute_timeout(tmp_path, monkeypatch):
     monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
     ws = Workspace(tmp_path / "ws")
 
-    def fake_run(cmd, **kw):
-        import subprocess as sp
-        raise sp.TimeoutExpired(cmd, 1)
+    def fake_capture(cmd, cwd, env, timeout_s):
+        return -1, True, "", ""
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
     assert h.outcome == AttemptOutcome.TIMEOUT.value
 
@@ -224,15 +222,10 @@ def test_hermes_backend_api_error_with_no_changes_is_crashed(tmp_path, monkeypat
     monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
     ws = Workspace(tmp_path / "ws")
 
-    def fake_run(cmd, **kw):
-        import types as t
-        return t.SimpleNamespace(
-            returncode=0,
-            stdout="HTTP 403: The free quota has been exhausted. To continue...",
-            stderr="",
-        )
+    def fake_capture(cmd, cwd, env, timeout_s):
+        return 0, False, "HTTP 403: The free quota has been exhausted. To continue...", ""
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
     assert h.outcome == AttemptOutcome.CRASHED.value
     assert h.files_touched == []
@@ -245,12 +238,48 @@ def test_hermes_backend_exit0_with_real_changes_stays_success(tmp_path, monkeypa
     monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
     ws = Workspace(tmp_path / "ws")
 
-    def fake_run(cmd, **kw):
+    def fake_capture(cmd, cwd, env, timeout_s):
         (ws.root / "real_work.py").write_text("x = 1\n", encoding="utf-8")
-        import types as t
-        return t.SimpleNamespace(returncode=0, stdout="retried after HTTP 429, then finished", stderr="")
+        return 0, False, "retried after HTTP 429, then finished", ""
 
-    monkeypatch.setattr(backends.subprocess, "run", fake_run)
+    monkeypatch.setattr(backends, "_run_cli_capture", fake_capture)
     h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
     assert h.outcome == AttemptOutcome.SUCCESS.value
     assert "real_work.py" in h.files_touched
+
+
+# ---- review-audit regression tests -----------------------------------------
+
+
+def test_changed_files_reports_deletions(tmp_path):
+    """A delete-only run must not report zero changes (that both understates
+    files_touched and can misfire the exit-0-no-change false-success guard)."""
+    from foreman.backends import _changed_files
+    before = {"a.py": (10, 1.0), "gone.py": (5, 1.0)}
+    after = {"a.py": (10, 1.0)}  # gone.py deleted
+    assert _changed_files(before, after) == ["gone.py"]
+
+
+def test_run_cli_capture_launch_failure_is_crashed(tmp_path):
+    """A binary that cannot be launched (OSError) must come back as a normal
+    crash tuple, not raise out of execute() and abort the whole run."""
+    from foreman.backends import _run_cli_capture
+    exit_code, timed_out, stdout, stderr = _run_cli_capture(
+        ["this_binary_does_not_exist_xyz"], str(tmp_path), {}, 5.0
+    )
+    assert exit_code == -1 and timed_out is False
+    assert "failed to launch" in stderr
+
+
+def test_hermes_launch_failure_becomes_crashed_handoff(tmp_path, monkeypatch):
+    """End to end: a launch failure inside execute() yields a CRASHED handoff,
+    never an exception that would kill the orchestrator loop."""
+    monkeypatch.setattr(backends, "find_hermes_bin", lambda: "hermes")
+    ws = Workspace(tmp_path / "ws")
+
+    def boom_capture(cmd, cwd, env, timeout_s):
+        return -1, False, "", "failed to launch agent CLI: [WinError 206]"
+
+    monkeypatch.setattr(backends, "_run_cli_capture", boom_capture)
+    h = backends.HermesBackend(_FakeSettings(), ws).execute(_task(), [])
+    assert h.outcome == AttemptOutcome.CRASHED.value

@@ -85,6 +85,15 @@ def _real_url(href: str) -> str:
     return href
 
 
+def _is_ad_href(href: str) -> bool:
+    """True for DuckDuckGo sponsored/ad redirect links (the ``y.js`` ad
+    tracker), which only unwrap to further ad-tracking URLs rather than a real
+    destination. These are paid placements, not the organic results this tool
+    is meant to surface, so they are dropped entirely."""
+    h = href.lower()
+    return "y.js" in h or "ad_domain=" in h or "ad_provider=" in h
+
+
 def _fetch(query: str) -> str:
     """POST to the DDG html endpoint, falling back to the lite endpoint.
 
@@ -133,14 +142,19 @@ def web_search(query: str, max_results: int = MAX_RESULTS) -> str:
     titles = list(_RESULT_RE.finditer(html))
     snippets = [_clean(m.group("snippet")) for m in _SNIPPET_RE.finditer(html)]
     if not titles:
-        # lite-endpoint markup (class-less table). Dedup href+title pairs —
-        # lite repeats some anchors — and there are no snippets to pair.
-        seen: set[tuple[str, str]] = set()
+        # lite-endpoint markup (class-less table). Dedup by DESTINATION href,
+        # not (href, title): DDG renders the same URL under several title
+        # variants (a plain title + a "More at Wikipedia" info-box anchor), and
+        # keying on the pair let every variant through, wasting result slots on
+        # one destination. Also drop sponsored ad redirects outright.
+        seen_hrefs: set[str] = set()
         titles = []
         for m in _LITE_RESULT_RE.finditer(html):
-            key = (m.group("href"), m.group("title"))
-            if key not in seen:
-                seen.add(key)
+            href = m.group("href")
+            if _is_ad_href(href):
+                continue
+            if href not in seen_hrefs:
+                seen_hrefs.add(href)
                 titles.append(m)
         snippets = []
 

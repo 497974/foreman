@@ -234,6 +234,23 @@ class Orchestrator:
             # tools. No git, no jail beyond the chosen root.
             root = Path(work_dir).expanduser().resolve() if work_dir else Path.home()
             root.mkdir(parents=True, exist_ok=True)
+            # If run_dir sits INSIDE work_dir (e.g. the default work_dir=home
+            # with the default run_root under home), the allow_all executor
+            # could read or clobber Foreman's own ledger/events for this run.
+            # Refuse, same as the project_dir path does — point --run-root
+            # outside --work-dir.
+            try:
+                self.run_dir.resolve().relative_to(root)
+                inside = True
+            except ValueError:
+                inside = False
+            if inside:
+                raise git_safety.GitSafetyError(
+                    f"Foreman's run directory ({self.run_dir}) is inside the "
+                    f"computer-mode work directory ({root}); the unrestricted "
+                    "executor could clobber Foreman's own run files. Re-run with "
+                    "a --run-root outside --work-dir."
+                )
             self.work_dir = root
             self.workspace = Workspace(root, allow_all=True)
             (run_dir / "computer_mode.json").write_text(
@@ -501,6 +518,20 @@ class Orchestrator:
                     self.project_dir, self.project_branch, allow_existing=True
                 )
                 self.workspace = Workspace(self.project_dir)
+                self.executor.workspace = self.workspace
+                self.verifier.workspace = self.workspace
+                self.arbiter.workspace = self.workspace
+
+            # Computer mode: symmetric to project_mode above. Without this, a
+            # resumed computer-mode run would fall back to the caller's default
+            # sandbox Workspace and lose both the real work_dir and allow_all,
+            # so its tasks could no longer touch the user's machine.
+            computer_mode_path = self.run_dir / "computer_mode.json"
+            if computer_mode_path.is_file():
+                data = json.loads(computer_mode_path.read_text(encoding="utf-8"))
+                self.computer_mode = True
+                self.work_dir = Path(data["work_dir"])
+                self.workspace = Workspace(self.work_dir, allow_all=True)
                 self.executor.workspace = self.workspace
                 self.verifier.workspace = self.workspace
                 self.arbiter.workspace = self.workspace
